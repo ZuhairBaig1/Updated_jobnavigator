@@ -3,18 +3,26 @@
 # Render reads this from the repository root. Point a Blueprint at the repo and it
 # creates both services; everything else is set once in the dashboard.
 #
-# The plans below are the smallest that actually work. `starter` rather than `free`
-# is deliberate: the image carries Chromium for PDF export, and a free instance
-# (512 MB, spun down after 15 minutes of no traffic) both struggles to hold it and
-# stops the scheduler from ever firing. Free is fine for trying the API out; it is
-# not fine for the scheduled scraping.
+# Set to the free plans. Know what that costs before relying on it:
+#
+#   * 512 MB RAM. PDF export renders through headless Chromium, which is the one thing
+#     in this image likely to exceed that — expect résumé download to be the first
+#     feature to fail, while import and tailoring (plain HTTP calls) are fine.
+#   * The instance spins down after 15 minutes without traffic. APScheduler stops with
+#     it, so scheduled scraping and the digest silently never run. Anything you trigger
+#     yourself still works, after a cold start of a minute or so on a 2 GB image.
+#   * Render deletes free databases after their trial window. Move to a paid database,
+#     or pg_dump anything you want to keep.
+#
+# `starter` for the web service and `basic-256mb` for the database are the smallest
+# paid tiers that remove all three problems.
 services:
   - type: web
     name: jobnavigator-backend
     runtime: docker
     dockerfilePath: ./Dockerfile.render
     dockerContext: .
-    plan: starter
+    plan: free
     healthCheckPath: /api/resumes/templates
     envVars:
       # Render injects the connection string from the database below.
@@ -35,4 +43,4 @@ databases:
   - name: jobnavigator-db
     databaseName: jobnavigator
     user: jobnavigator
-    plan: basic-256mb
+    plan: free

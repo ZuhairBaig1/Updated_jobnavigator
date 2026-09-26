@@ -204,7 +204,7 @@ export default function Settings() {
       setS(s.data || {}); setDefaults(d.data || {})
       // an override row starts open when it actually has a provider set
       const o = {}
-      for (const k of ['scoring_llm', 'llm_fallback', 'cv_tailor_llm', 'cover_letter_llm', 'autofill_llm', 'email_llm']) {
+      for (const k of ['scoring_llm', 'llm_fallback', 'parse_llm', 'cv_tailor_llm', 'cover_letter_llm', 'autofill_llm', 'email_llm']) {
         o[k] = !!(s.data || {})[`${k}_provider`]
       }
       setOvr(o)
@@ -365,6 +365,7 @@ export default function Settings() {
         LLM('Scoring', 'Model that scores new jobs against your résumés.', 'scoring_llm'),
         LLM('Scoring fallback', 'Retries scoring once on error or rate limit — scoring only.', 'llm_fallback',
           { info: 'Used only when the scoring call fails or is rate-limited. One retry, then the job stays unscored until the next run. Choose a cheap model from a different provider than the primary.' }),
+        LLM('Résumé import', 'Model that structures an uploaded PDF into an ATS base résumé.', 'parse_llm'),
         LLM('Tailoring', 'Model that rewrites résumé bullets for a posting.', 'cv_tailor_llm'),
         LLM('Cover letters', 'Model that drafts letters from résumé + posting + Persona.', 'cover_letter_llm'),
         LLM('Autofill', 'Model that answers application-form questions in the extension.', 'autofill_llm'),

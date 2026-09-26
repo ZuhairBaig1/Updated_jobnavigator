@@ -62,7 +62,7 @@ async def test_tailor_endpoint_returns_202_with_run_id(api_client, test_db, monk
 
     # Stub the LLM so the impl can't block; we're testing the plumbing
     import backend.api.routes_resumes as rr
-    async def fake_call(prompt, system, max_tokens):
+    async def fake_call(prompt, system, max_tokens, **kwargs):
         return {"text": '{"summary":"tailored"}', "usage": {}}
     monkeypatch.setattr("backend.analyzer.llm_client.call_cv_tailor_llm", fake_call)
     monkeypatch.setattr(rr, "_tailoring_semaphore", None, raising=False)
@@ -96,7 +96,7 @@ async def test_tailor_creates_job_run_with_target_job_id(api_client, test_db, mo
     test_db.add(base)
     test_db.commit()
 
-    async def fake_call(prompt, system, max_tokens):
+    async def fake_call(prompt, system, max_tokens, **kwargs):
         return {"text": '{"summary":"tailored"}', "usage": {}}
     monkeypatch.setattr("backend.analyzer.llm_client.call_cv_tailor_llm", fake_call)
     import backend.job_monitor as mon

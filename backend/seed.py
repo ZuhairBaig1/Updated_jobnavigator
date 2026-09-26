@@ -8,6 +8,90 @@ from sqlalchemy import text
 logger = logging.getLogger("jobnavigator.seed")
 
 
+# Both tailoring prompts carry the same ATS rules and differ only in what they are
+# handed: a base résumé, or the Persona's deeper pool of bullets. The reply shape is
+# enforced as a response schema (resume_schema.TAILOR_JSON_SCHEMA); the JSON at the
+# end states it for whoever edits the prompt, and for the CLI providers, which take
+# no schema.
+_TAILOR_RULES = (
+    "Rule 0 overrides every other rule.\n\n"
+    "0. TRUTHFULNESS\n"
+    "- Never make up information: no invented metric, skill, tool, experience, employer, title, date, certification or contact detail.\n"
+    "- You may alter wording to match the job description more closely, but it must stay true to the original resume and never turn into something the resume does not state.\n"
+    "- Every claim and metric must reflect the original resume. Use only metrics the resume states; if it has none, add none.\n"
+    "- A bullet may name a tool, technique or keyword only if the original bullet, or the role or project it sits under, already names it. The technical skills list does not count, and neither does the summary, another role or another project.\n"
+    "- The skills list says what the candidate knows, never where they used it. \"DHCP\" sitting under \"Cisco IOS Configuration\" does not make \"Configured DHCP\" true of any particular employer: that is a claim the resume never made, and the candidate has to defend it in the interview. Skills stay in the skills section.\n"
+    "- Read a bullet for what the candidate did, not for the words it contains. A technology can appear as a property of the thing they worked on rather than as something they can do. \"Configured Jenkins jobs for Java-based retail applications\" says they built the build pipeline; Java is the language the application was written in, by its developers. That is not a Java skill, and \"Java\" does not belong in the skills list however plainly the posting asks for it. The same goes for \"deployed the React front end\", \"supported a .NET application\" and \"migrated a COBOL system\". The tell is grammatical: the technology is modifying a noun (\"a Java-based application\", \"a Python service\") instead of naming what the candidate used.\n"
+    "- Do not over-correct on the rule above. When a bullet says the candidate used the tool - \"automated provisioning using Terraform, Ansible, Python and Bash\", \"wrote Shell scripts to validate services\" - that is a real skill and it stays, in the bullet and in the skills list. That rule removes a claim the resume never made; it never shrinks one the resume did make.\n"
+    "- This covers every section, not just bullets. The professional summary and the technical skills may state only what the resume states: no capability the resume never claims (\"network security\" because the JD asks for it, when the resume only shows mounting firewalls into racks), and no adjective the resume does not earn.\n"
+    "- When the rules below pull against this one, this one wins: a section without the JD's keyword always beats a section that claims something the resume does not state. Example: the JD asks for LangGraph; a role whose bullets never mention LangGraph must not mention it after rewriting, however well it would match.\n\n"
+    "1. JD MATCH\n"
+    "- Cover 82-95% of the job description's core requirements: its core technical requirements and essential soft skills. A 100% match looks copy-pasted to recruiters.\n"
+    "- Leave out minor or irrelevant JD keywords.\n\n"
+    "2. WHAT RELEVANT MEANS\n"
+    "- A bullet or a project is relevant when it touches anything the posting asks for: one of its tools or technologies, another tool of the same kind, the same sort of work (building backends, processing documents, checking model output, and so on), the same domain, or any skill it lists under requirements or responsibilities.\n"
+    "- Relevance does not need the same words. A bullet about searching a vector store is relevant to a posting asking for RAG; a Flask service is relevant to a posting asking for FastAPI; parsing scanned invoices is relevant to a posting asking for document processing.\n"
+    "- A project is relevant when its name, its technologies line or any one of its bullets meets that test. One relevant bullet makes the whole project relevant.\n"
+    "- Only content with no connection at all to the posting is irrelevant. Relevant is the default; irrelevant is the exception you must be able to justify.\n\n"
+    "3. HEADER\n"
+    "- Copy every header field exactly from the resume.\n"
+    "- The title is the headline under the name. Keep the resume's own, or narrow it to the part of it that fits the posting (\"GenAI / LLM Engineer | Python Backend Engineer\" -> \"GenAI / LLM Engineer\"). Never invent one, never add seniority the resume does not claim, and never copy the posting's job title.\n"
+    "- The location is where the candidate lives, copied exactly from the resume's header. Never move it towards the posting's location, never shorten or expand it, and never take it from a role's location.\n"
+    "- A field the resume does not state stays empty. Never add a LinkedIn or GitHub link the resume does not have.\n"
+    "- Nothing else: no marital status, languages, references, date of birth, photo or other personal details.\n\n"
+    "4. PROFESSIONAL SUMMARY\n"
+    "- One concise paragraph, never a long list.\n"
+    "- Open with a word that describes what the candidate is, taken from the resume's own language. Keep the opening word the resume already uses unless the posting gives you a better one from the resume itself. Never copy an opener out of these instructions.\n"
+    "- Include total years of experience and quantified achievements, only as the resume states them.\n"
+    "- Include the most critical JD keywords; they must also appear in the experience bullets.\n\n"
+    "5. TECHNICAL SKILLS\n"
+    "- Grouped categories, such as Cloud Platforms, Programming Languages, ETL/ELT and Databases.\n"
+    "- Keep every skill the resume lists. You choose the grouping, the order and the wording; you do not choose the membership. Dropping one is keyword surface lost for nothing - a skill the posting never mentions costs a few characters, while a missing one the posting does mention costs the match.\n"
+    "- Put the categories the posting asks about first, and within each category the skills the posting names first.\n"
+    "- Name each skill exactly as the JD does (e.g. \"Azure Data Factory\" when the JD says so, not only \"ADF\").\n"
+    "- List each skill once: no variants (\"Python, Python scripting, Advanced Python\"), no versions as separate skills (\"AWS Glue, AWS Glue 4.0\"), no tool under more than one category.\n"
+    "- Fix typos in tool names (e.g. \"Adobe Airflow\" is \"Apache Airflow\").\n"
+    "- Never add a skill the resume does not show. A technology the resume names only as a property of something the candidate worked on is not shown by it - see rule 0. A certification belongs under certifications, not here.\n\n"
+    "6. WORK EXPERIENCE\n"
+    "- Every role from the resume, in its original order, with its facts copied exactly.\n"
+    "- Keep every bullet that is relevant by rule 2. There is no maximum. Merge duplicate and near-duplicate bullets into one.\n"
+    "- Order the bullets inside each role with the ones the posting asks about first, so a recruiter scanning the top of a role meets the relevant work first. The roles themselves stay in the resume's order.\n"
+    "- Never write a bullet that was not already there. Every bullet you return rewrites one the resume states under that same role; two may be merged into one, but nothing is added, and nothing is assembled out of the skills list. A role ends with the same bullets it started with or fewer, never more.\n"
+    "- Drop a bullet only when nothing in it is relevant by rule 2. When in doubt, keep it: losing real experience costs more than carrying one weak bullet.\n"
+    "- Rewrite every bullet you keep: the same facts, in the JD's vocabulary, leading with what the posting asks for. Returning a bullet word for word as it arrived counts as work not done, unless it already uses the posting's own terms for everything it describes.\n"
+    "- Rewriting changes wording only. The facts, tools, numbers, scope and outcome stay exactly what the original bullet stated.\n"
+    "- Bullets only, never paragraphs: turn a role's description into bullets. No \"Responsibilities:\" label.\n"
+    "- Start every bullet with an action verb, such as Designed, Engineered, Built, Developed, Led, Automated, Migrated, Optimized, Reduced or Delivered.\n"
+    "- Formula: action verb + what was built or done + tools/JD keywords + measurable result (only a result the resume states).\n"
+    "- Vague endings without numbers (\"improving efficiency\", \"significantly reducing time\") weaken credibility: use the resume's own number, or end the bullet at what was done.\n"
+    "- Remove generic statements.\n"
+    "- Use the target company's domain terms (e.g. \"clinical datasets\" for healthcare, \"financial transactions\" for finance) where the original work was in that domain.\n"
+    "- Put the most critical JD skill inside the action of the bullets that already show that skill; never add it to a bullet that does not.\n\n"
+    "7. PROJECTS\n"
+    "- Only projects from the resume, with their facts copied exactly.\n"
+    "- Keep every project that is relevant by rule 2 - most projects on a resume are. Leave one out only when nothing in it is relevant, and expect that to be rare.\n"
+    "- In a kept project, keep and rewrite its bullets by the same rules as work experience bullets.\n\n"
+    "8. KEYWORDS\n"
+    "- Where the resume already supports a critical JD keyword, let it show: in the professional summary, in the bullets whose work already involved it (across more than one role where the resume shows that), and once in technical skills.\n"
+    "- There is no quota. Never add a mention to reach a count, and never put a keyword into a bullet, a skill line or the summary that did not already involve it: one truthful mention beats three placed ones, and a placed one is a lie a recruiter will test in the interview.\n"
+    "- Repeat them in context, inside real achievements, not as bare lists of tools.\n"
+    "- Use the JD's exact phrasing. Write a full term with its acronym once, e.g. \"Change Data Capture (CDC)\".\n\n"
+    "9. EDUCATION\n"
+    "- Every education entry the resume lists, including school-level ones, copied exactly from the resume. A field the resume does not state stays empty.\n"
+    "- The graduation date is copied as the resume prints it (\"Jun 2025\", \"Graduated Jun 2025\"). Never reduce it to the year and never guess a month.\n\n"
+    "10. CERTIFICATIONS\n"
+    "- Only certifications the resume states that are relevant to the role or requested in the JD. None otherwise.\n"
+    "- Keep a certification when it is relevant to the candidate's field or to the posting's domain, even when the posting never names it. Leave out only credentials from an unrelated field.\n\n"
+    "11. LANGUAGE\n"
+    "- No unnatural phrasing and no generic fluff. Keep the candidate's own voice."
+)
+
+_TAILOR_REPLY = (
+    "Stick to the strict JSON format you are given: its sections, in its order, with nothing "
+    "before or after the object."
+)
+
+
 DEFAULT_SETTINGS = {
     "fit_score_threshold": ("60", "Minimum fit score to trigger Telegram alert"),
     "scrape_interval_minutes": ("60", "How often the job checker runs"),
@@ -51,6 +135,9 @@ DEFAULT_SETTINGS = {
     "scoring_llm_provider": ("", "Resume scoring provider override (empty = use Primary)"),
     "scoring_llm_model": ("", "Resume scoring model override (empty = use Primary)"),
     "scoring_llm_api_key": ("", "API key for the scoring provider override"),
+    "parse_llm_provider": ("", "LLM provider for résumé PDF import (empty = use primary llm_provider)"),
+    "parse_llm_model": ("", "LLM model for résumé PDF import (empty = use primary llm_model)"),
+    "parse_llm_api_key": ("", "API key for the résumé PDF import provider"),
     "llm_models_list": (json.dumps([
         {"provider": "claude_api", "model": "claude-sonnet-5"},
         {"provider": "claude_api", "model": "claude-sonnet-4-6"},
@@ -115,6 +202,9 @@ DEFAULT_SETTINGS = {
         {"provider": "openrouter", "model": "meta-llama/llama-4-maverick"},
         {"provider": "openrouter", "model": "x-ai/grok-4.6"},
         {"provider": "openrouter", "model": "mistralai/mistral-large-2512"},
+        {"provider": "openrouter", "model": "deepseek/deepseek-v4.1-flash"},
+        {"provider": "openrouter", "model": "deepseek/deepseek-v4-flash-0731"},
+        {"provider": "openrouter", "model": "google/gemma-4-31b-it"},
     ]), "Known LLM models per provider (JSON array, user can add custom entries)"),
     "scoring_max_concurrent": ("5", "Max parallel scoring jobs (others queue until a slot opens)"),
     "tailoring_max_concurrent": ("2", "Max concurrent resume-tailoring LLM calls"),
@@ -155,8 +245,20 @@ DEFAULT_SETTINGS = {
     "cv_tailor_llm_provider": ("", "LLM provider for resume tailoring (empty = use primary llm_provider)"),
     "cv_tailor_llm_model": ("", "LLM model for resume tailoring (empty = use primary llm_model)"),
     "cv_tailor_llm_api_key": ("", "API key for resume tailoring LLM provider"),
-    "cv_tailor_prompt": ("Tailor this resume for the job description below.\n\nRules for MAIN bullets[]:\n- Rewrite the summary to target this specific role\n- For each experience bullet: if it benefits from JD keyword alignment, reformulate it. If it's already well-suited, leave it UNCHANGED\n- Keep the same number of bullets per experience entry - do not add or remove\n- Reorder skills to prioritize JD-relevant ones first\n- Do NOT invent new experience, skills, or facts in the main bullets. If something is missing, map to the closest truthful concept\n- NEVER add skills the candidate does not have\n- Preserve all company names, titles, dates, locations, education exactly\n- Do NOT use em-dashes or unicode special characters. Use regular hyphens (-) and ASCII only\n- Preserve **bold** formatting (double asterisks) from the original bullets. For reformulated bullets, wrap the strongest metric or achievement in **bold** (e.g. **40,000+ new clients**, **reduced error rates by 30%**). Each bullet should have at most one bold highlight\n- VERIFICATION: every reformulated bullet must trace to the original resume. If you cannot trace it, leave the original unchanged.\n\nRules for suggested_bullets[] (gap-fillers - DIFFERENT from main bullets):\n- For each experience entry, generate 1-2 PLAUSIBLE STAR-format bullets that cover JD keywords/skills no existing bullet in this role covers\n- These MAY invent realistic, believable facts/metrics that someone in this role/title at this company at this seniority would credibly have done\n- Specifically target keywords from the JD that no existing bullet mentions\n- Use STAR format: strong action verb, context, concrete (possibly invented) metric or outcome\n- The user reviews these in a diff modal and accepts/rejects each - they know suggestions are speculative gap-fillers\n- Wrap the strongest metric in **bold** (one per bullet)\n- Skip a role entirely if no JD keyword gap exists for it\n\nResume:\n{resume_json}\n\nJob Description:\n{job_description}\n\nReturn ONLY this JSON:\n{\"summary\": \"rewritten summary\", \"experience\": [{\"company\": \"unchanged\", \"title\": \"unchanged\", \"location\": \"unchanged\", \"date\": \"unchanged\", \"description\": \"unchanged or null\", \"bullets\": [\"reformulated or unchanged bullet from existing content\"], \"suggested_bullets\": [\"plausible gap-filler covering missing JD keyword\"]}], \"skills\": {\"reordered label\": \"reordered value\"}}", "Editable resume tailoring LLM prompt template"),
-    "persona_tailor_prompt": ("Tailor a FOCUSED resume from this rich candidate profile, targeted at the job description below.\n\nThe candidate profile is a deep pool - most roles have many bullets. SELECT only the strongest aligned with the JD; drop the rest.\n\nRules for MAIN bullets[]:\n- Rewrite the summary to target this specific role (2-4 sentences, lead with the most relevant strength)\n- For each experience entry: SELECT only 3-5 bullets (max 6 for the most senior/recent role) that best match JD keywords and required skills\n- Reformulate each selected bullet to use the JD's exact vocabulary where possible\n- Reorder skills to prioritize JD-relevant ones first; cap at 6 categories\n- Do NOT invent new experience, skills, or facts in the main bullets. Only reframe existing content from the candidate profile\n- NEVER add skills the candidate does not have\n- Preserve all company names, titles, dates, locations, education exactly\n- Do NOT use em-dashes or unicode special characters. Use regular hyphens (-) and ASCII only\n- Preserve **bold** formatting. For reformulated bullets, wrap the strongest metric in **bold** (one per bullet)\n- VERIFICATION: every selected/reformulated bullet must be traceable to the candidate profile\n\nRules for suggested_bullets[] (gap-fillers - DIFFERENT from main bullets):\n- For each experience entry, generate 1-2 PLAUSIBLE STAR-format bullets that cover JD keywords/skills no main bullet (selected from the pool) covers\n- These MAY invent realistic, believable facts/metrics that someone in this role at this company at this seniority would credibly have done\n- Specifically target JD keywords that no main bullet mentions\n- STAR format: strong action verb, context, concrete (possibly invented) metric or outcome\n- The user reviews these in a diff modal and accepts/rejects each\n- Wrap the strongest metric in **bold** (one per bullet)\n- Skip a role if no JD keyword gap exists\n\nCandidate Profile:\n{resume_json}\n\nJob Description:\n{job_description}\n\nReturn ONLY this JSON:\n{\"summary\": \"rewritten summary\", \"experience\": [{\"company\": \"unchanged\", \"title\": \"unchanged\", \"location\": \"unchanged\", \"date\": \"unchanged\", \"description\": \"unchanged or null\", \"bullets\": [\"selected + reformulated bullet from candidate profile\"], \"suggested_bullets\": [\"plausible gap-filler covering missing JD keyword\"]}], \"skills\": {\"reordered label\": \"reordered value\"}}", "Editable Persona tailoring LLM prompt template - used when base_resume_id='persona' to constrain bullet selection from the rich pool"),
+    "cv_tailor_prompt": (
+        "Tailor this resume to the job description below.\n\n"
+        + _TAILOR_RULES
+        + "\n\nResume:\n{resume_json}\n\nJob Description:\n{job_description}\n\n"
+        + _TAILOR_REPLY,
+        "Editable resume tailoring LLM prompt template"),
+    "persona_tailor_prompt": (
+        "Tailor a resume from this candidate profile to the job description below. The profile "
+        "is a deep pool: a role may hold many overlapping bullets. Keep every JD-relevant one, "
+        "merge the overlapping ones and drop the rest.\n\n"
+        + _TAILOR_RULES
+        + "\n\nCandidate Profile:\n{resume_json}\n\nJob Description:\n{job_description}\n\n"
+        + _TAILOR_REPLY,
+        "Editable Persona tailoring LLM prompt template - used when base_resume_id='persona' to tailor from the Persona's full bullet pool"),
     "cover_letter_llm_provider": ("", "LLM provider for cover-letter generation (empty = use primary llm_provider)"),
     "cover_letter_llm_model": ("", "LLM model for cover-letter generation (empty = use primary llm_model)"),
     "cover_letter_llm_api_key": ("", "API key for cover-letter LLM provider"),
@@ -383,6 +485,7 @@ ENUM_SETTING_VALUES = {
     "llm_provider": _LLM_PROVIDERS,
     "llm_fallback_provider": _LLM_PROVIDERS,
     "scoring_llm_provider": _LLM_PROVIDERS,
+    "parse_llm_provider": _LLM_PROVIDERS,
     "email_llm_provider": _LLM_PROVIDERS,
     "cv_tailor_llm_provider": _LLM_PROVIDERS,
     "cover_letter_llm_provider": _LLM_PROVIDERS,
@@ -964,7 +1067,7 @@ def migrate_llm_settings(db):
 
     provider_keys = ["llm_provider", "llm_fallback_provider", "email_llm_provider",
                      "cv_tailor_llm_provider", "cover_letter_llm_provider", "autofill_llm_provider",
-                     "scoring_llm_provider"]
+                     "scoring_llm_provider", "parse_llm_provider"]
     for key in provider_keys:
         r = db.query(Setting).filter(Setting.key == key).first()
         if r and r.value == "openai_compat":
@@ -972,7 +1075,7 @@ def migrate_llm_settings(db):
 
     model_keys = ["llm_model", "llm_fallback_model", "email_llm_model",
                   "cv_tailor_llm_model", "cover_letter_llm_model", "autofill_llm_model",
-                  "scoring_llm_model"]
+                  "scoring_llm_model", "parse_llm_model"]
     for key in model_keys:
         r = db.query(Setting).filter(Setting.key == key).first()
         if r and r.value == "claude-haiku-4-5-20251001":

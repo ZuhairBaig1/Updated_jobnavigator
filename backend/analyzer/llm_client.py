@@ -1,5 +1,6 @@
 """Provider-agnostic LLM client for scoring and analysis with automatic fallback."""
 import asyncio
+import json
 import logging
 import os
 import re
@@ -44,8 +45,23 @@ def resolve_llm_config(feature: str = "", db=None) -> dict:
 async def call_llm(prompt: str, system: str, max_tokens: int = 1200,
                    cached_prefix: str | None = None,
                    provider: str | None = None, model: str | None = None,
-                   api_key: str | None = None) -> dict:
-    """Route to the configured LLM provider with retry + automatic fallback; provider/model/api_key override the Primary for this call when given, else fall back to the llm_* settings."""
+                   api_key: str | None = None,
+                   response_schema: dict | None = None,
+                   schema_name: str = "response",
+                   timeout: float | None = None,
+                   temperature: float | None = None,
+                   reasoning: bool | None = None) -> dict:
+    """Route to the configured LLM provider with retry + automatic fallback; provider/model/api_key override the Primary for this call when given, else fall back to the llm_* settings. response_schema constrains the reply to that JSON Schema where the provider can enforce it (see _dispatch).
+
+    On OpenRouter each attempt is pinned to a backend from the model's ladder (openrouter_ladder):
+    a backend that cannot serve the request steps to the next rung immediately (no
+    backoff — it is a different machine), while any other failure retries the same
+    backend on the usual backoff.
+
+    `timeout` is a per-attempt deadline in seconds. Exceeding it raises
+    LLMTimeoutError and abandons the whole call: no further rungs, no fallback
+    provider, because the caller is waiting on a person-facing request.
+    """
     MAX_ATTEMPTS = 4
     BACKOFF_BASE = 2  # seconds: 2, 4, 8
 
@@ -68,47 +84,67 @@ async def call_llm(prompt: str, system: str, max_tokens: int = 1200,
     # prefix concatenated into the prompt (no cache discount).
     caching = bool(cached_prefix) and provider == "claude_api"
 
+    async def _try_pair(prov, mdl, key, label, caching_on):
+        """MAX_ATTEMPTS against one provider/model, walking the OpenRouter backend ladder on availability failures. Returns the reply or raises the last error."""
+        rung = 0
+        last_err = None
+        ladder = openrouter_ladder(mdl)
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            on_ladder = prov == "openrouter"
+            backend = ladder[rung] if on_ladder else None
+            where = f", backend={backend or 'unpinned'}" if on_ladder else ""
+            try:
+                logger.info(f"LLM {label}: provider={prov}, model={mdl}, attempt={attempt}/{MAX_ATTEMPTS}{where}, caching={'on' if caching_on else 'off'}")
+                call = _dispatch(prov, mdl, key, prompt, system, max_tokens, cached_prefix=cached_prefix,
+                                 response_schema=response_schema, schema_name=schema_name, backend=backend,
+                                 temperature=temperature, reasoning=reasoning)
+                return await (asyncio.wait_for(call, timeout=timeout) if timeout else call)
+            except (asyncio.TimeoutError, TimeoutError) as e:
+                # Someone is holding a request open waiting for this; another rung
+                # would only make them wait longer. Give up on the whole call.
+                raise LLMTimeoutError(f"{prov}/{mdl} did not answer within {timeout:g}s") from e
+            except Exception as e:
+                last_err = e
+                if isinstance(e, NonRetryableLLMError):
+                    logger.warning(f"LLM {label} failed, not retrying: {e}")
+                    break
+                if on_ladder and _is_backend_unavailable(e) and rung + 1 < len(ladder):
+                    rung += 1
+                    nxt = ladder[rung] or "unpinned"
+                    # A different machine — waiting first would buy nothing.
+                    logger.warning(f"LLM {label} backend {backend} unavailable ({e}); stepping to {nxt}")
+                    continue
+                if attempt < MAX_ATTEMPTS:
+                    wait = BACKOFF_BASE ** attempt  # 2, 4, 8
+                    logger.warning(f"LLM {label} attempt {attempt}/{MAX_ATTEMPTS} failed: {e}, retrying in {wait}s")
+                    await asyncio.sleep(wait)
+                else:
+                    logger.warning(f"LLM {label} exhausted {MAX_ATTEMPTS} attempts: {e}")
+        raise last_err if last_err else RuntimeError(f"LLM {label} made no attempt")
+
     # Try primary with retries
     last_primary_err = None
-    for attempt in range(1, MAX_ATTEMPTS + 1):
-        try:
-            logger.info(f"LLM call: provider={provider}, model={model}, attempt={attempt}/{MAX_ATTEMPTS}, caching={'on' if caching else 'off'}")
-            res = await _dispatch(provider, model, api_key, prompt, system, max_tokens, cached_prefix=cached_prefix)
-            return {**res, "provider": provider, "model": model}
-        except Exception as e:
-            last_primary_err = e
-            if isinstance(e, NonRetryableLLMError):
-                logger.warning(f"LLM primary failed, not retrying: {e}")
-                break
-            if attempt < MAX_ATTEMPTS:
-                wait = BACKOFF_BASE ** attempt  # 2, 4, 8
-                logger.warning(f"LLM primary attempt {attempt}/{MAX_ATTEMPTS} failed: {e}, retrying in {wait}s")
-                await asyncio.sleep(wait)
-            else:
-                logger.warning(f"LLM primary exhausted {MAX_ATTEMPTS} attempts: {e}")
+    try:
+        res = await _try_pair(provider, model, api_key, "primary", caching)
+        return {**res, "provider": provider, "model": model}
+    except LLMTimeoutError:
+        raise
+    except Exception as e:
+        last_primary_err = e
 
     # Try fallback with retries
     if fallback_provider and fallback_model:
         fb_caching = bool(cached_prefix) and fallback_provider == "claude_api"
         last_fallback_err = None
-        for attempt in range(1, MAX_ATTEMPTS + 1):
-            try:
-                logger.info(f"LLM fallback: provider={fallback_provider}, model={fallback_model}, attempt={attempt}/{MAX_ATTEMPTS}, caching={'on' if fb_caching else 'off'}")
-                res = await _dispatch(fallback_provider, fallback_model, fb_api_key, prompt, system, max_tokens, cached_prefix=cached_prefix)
-                # Report the pair that actually answered so the caller logs the
-                # fallback, not the primary it never reached.
-                return {**res, "provider": fallback_provider, "model": fallback_model}
-            except Exception as e:
-                last_fallback_err = e
-                if isinstance(e, NonRetryableLLMError):
-                    logger.error(f"LLM fallback failed, not retrying: {e}")
-                    break
-                if attempt < MAX_ATTEMPTS:
-                    wait = BACKOFF_BASE ** attempt
-                    logger.warning(f"LLM fallback attempt {attempt}/{MAX_ATTEMPTS} failed: {e}, retrying in {wait}s")
-                    await asyncio.sleep(wait)
-                else:
-                    logger.error(f"LLM fallback exhausted {MAX_ATTEMPTS} attempts: {e}")
+        try:
+            res = await _try_pair(fallback_provider, fallback_model, fb_api_key, "fallback", fb_caching)
+            # Report the pair that actually answered so the caller logs the
+            # fallback, not the primary it never reached.
+            return {**res, "provider": fallback_provider, "model": fallback_model}
+        except LLMTimeoutError:
+            raise
+        except Exception as e:
+            last_fallback_err = e
 
         raise RuntimeError(
             f"Both LLM providers failed after {MAX_ATTEMPTS} attempts each. "
@@ -129,14 +165,21 @@ async def call_email_llm(prompt: str, system: str, max_tokens: int = 150) -> dic
     return {**res, "provider": provider, "model": model}
 
 
-async def call_cv_tailor_llm(prompt: str, system: str, max_tokens: int = 3000) -> dict:
-    """Route to CV-tailoring-specific LLM provider. Returns {text, usage}."""
+async def call_cv_tailor_llm(prompt: str, system: str, max_tokens: int = 3000,
+                             response_schema: dict | None = None,
+                             schema_name: str = "response",
+                             temperature: float | None = None,
+                             reasoning: bool | None = None) -> dict:
+    """Route to the CV-tailoring provider through call_llm, so tailoring gets the same retries, OpenRouter backend ladder and fallback provider as résumé import. Returns {text, usage, provider, model} naming the pair that answered."""
     cfg = resolve_llm_config("cv_tailor")
     provider, model = cfg["provider"], cfg["model"]
 
     logger.info(f"CV tailor LLM call: provider={provider}, model={model}, max_tokens={max_tokens}")
-    res = await _dispatch(provider, model, cfg["api_key"], prompt, system, max_tokens)
-    return {**res, "provider": provider, "model": model}
+    # No deadline: the run is in the background, so no one is waiting on a spinner.
+    return await call_llm(prompt, system, max_tokens=max_tokens,
+                          provider=provider, model=model, api_key=cfg["api_key"],
+                          response_schema=response_schema, schema_name=schema_name,
+                          temperature=temperature, reasoning=reasoning)
 
 
 async def call_cover_letter_llm(prompt: str, system: str, max_tokens: int = 1500,
@@ -209,6 +252,76 @@ async def _stream_claude(prompt, system, model, api_key, max_tokens, cached_pref
 
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+# OpenRouter routes each request to one of ~22 backends serving the model, and which
+# one it picks dominates latency: measured against the résumé schema, the same model
+# ranged from 6s (together) to >180s (two timed out). The ladder pins the two that
+# were fast on every sample, then falls through to unpinned so a bad day for both
+# degrades to OpenRouter's own routing instead of failing the call.
+# Re-measured on deepseek-v4.1-flash structuring a 3-page résumé (2026-09-23): together
+# 30s, fireworks 42s, coreweave/fp8 33s, morph 38s, modal 69s, wafer 94s, atlas 85s,
+# deepinfra/fp8 139s.
+# Tags are per-model endpoint names; an unknown tag just fails and steps down.
+OPENROUTER_BACKEND_LADDER = ("together", "fireworks", None)
+
+# Backends differ per model, so a model measured the same way gets its own ladder.
+# deepseek-v4-pro, structuring a 3-page résumé twice per backend (2026-09-22):
+# deepinfra/fp8 42s and 13s, baidu/fp8 40s and 50s, against 98s unpinned; two backends
+# ran past 8000 tokens and neither default pin serves the model.
+OPENROUTER_MODEL_LADDERS = {
+    "deepseek/deepseek-v4-pro": ("deepinfra/fp8", "baidu/fp8", None),
+    # Checked 2026-09-22: no default pin serves these, so they start unpinned instead of
+    # spending two rungs (and two of the four attempts) on "No endpoints found".
+    # gemma-4-31b, tailoring the same résumé three times per backend (2026-09-23):
+    # modelrun/fp4 answered in 6s flat, coreweave/fp4 in 26-111s, siliconflow/fp8 twice
+    # returned a single role bullet. The fast one occasionally omits a project, which
+    # build_tailored_resume now backfills, so speed comes first and coreweave follows.
+    "google/gemma-4-31b-it": ("modelrun/fp4", "coreweave/fp4", None),
+    "qwen/qwen3-30b-a3b-instruct-2507": (None,),
+    "qwen/qwen3.8-27b": (None,),
+    "openai/gpt-oss-safeguard-20b": (None,),
+}
+
+
+def openrouter_ladder(model: str) -> tuple:
+    """The OpenRouter backend ladder for `model`: its own measured pins, else the default."""
+    return OPENROUTER_MODEL_LADDERS.get(model, OPENROUTER_BACKEND_LADDER)
+
+
+class BackendUnavailableError(RuntimeError):
+    """This backend could not serve the request (saturated, down, or truncated the reply). Retrying it is pointless — step to the next rung."""
+
+
+class LLMTimeoutError(RuntimeError):
+    """A call exceeded the caller's deadline. Aborts the whole call_llm: no more rungs, no provider fallback."""
+
+
+# OpenRouter relays a backend's own failure with the upstream status. These are the
+# ones that mean "this machine can't take it", as opposed to "this request is wrong".
+_UNAVAILABLE_STATUS = {429, 500, 502, 503, 504}
+
+
+def _is_backend_unavailable(exc: Exception) -> bool:
+    """True when the failure is the backend's availability rather than the request itself.
+
+    A 429 relayed from a provider ("Provider returned error") means that backend is
+    saturated; a 429 against the OpenRouter account itself means *we* are over a
+    limit and stepping sideways would not help, so only the former steps down.
+    """
+    if isinstance(exc, BackendUnavailableError):
+        return True
+    status = getattr(exc, "status_code", None)
+    if status in _UNAVAILABLE_STATUS:
+        if status == 429:
+            return "provider returned error" in str(exc).lower()
+        return True
+    # A pinned backend that doesn't serve this model (or can't honour the schema) leaves
+    # OpenRouter no endpoint at all — "No endpoints found". Retrying that pin can never
+    # succeed; the next rung, which may be unpinned, can.
+    if status == 404 and "no endpoints found" in str(exc).lower():
+        return True
+    # No response at all: DNS, connection reset, read timeout.
+    return type(exc).__name__ in ("APIConnectionError", "APITimeoutError", "ConnectError", "ReadTimeout")
 # OpenRouter app attribution (lists the app on openrouter.ai/apps); ignored by other endpoints.
 OPENROUTER_HEADERS = {"HTTP-Referer": "https://github.com/vesaias/JobNavigator", "X-Title": "JobNavigator"}
 
@@ -231,26 +344,79 @@ async def _stream_openai(prompt, system, model, api_key, max_tokens, base_url=No
             yield delta
 
 
+def _json_schema_format(schema: dict, name: str) -> dict:
+    """An OpenAI-style response_format for `schema`; strict mode is what makes it a constraint rather than a hint."""
+    return {"type": "json_schema",
+            "json_schema": {"name": name, "strict": True, "schema": schema}}
+
+
+def _openrouter_routing(backend: str | None, schema: dict | None) -> dict | None:
+    """OpenRouter's `provider` routing block: pin this rung's backend, or, on the unpinned rung, at least keep the routing to backends that honour the schema (10 of the 22 serving our model do not)."""
+    if backend:
+        return {"provider": {"order": [backend], "allow_fallbacks": False}}
+    if schema:
+        return {"provider": {"require_parameters": True}}
+    return None
+
+
+def _schema_in_prompt(prompt: str, schema: dict | None) -> str:
+    """The last-resort fallback for the CLI providers, which drive a coding agent and take no response format: the schema goes in the prompt, where it is a request rather than a constraint."""
+    if not schema:
+        return prompt
+    return (f"{prompt}\n\nReturn one JSON object and nothing else. It must validate "
+            f"against this JSON Schema:\n{json.dumps(schema)}")
+
+
 async def _dispatch(provider: str, model: str, api_key: str,
                     prompt: str, system: str, max_tokens: int,
-                    cached_prefix: str | None = None) -> dict:
-    """Route to the correct provider; only `claude_api` supports prompt caching, others get cached_prefix concatenated into the prompt (no cache discount)."""
+                    cached_prefix: str | None = None,
+                    response_schema: dict | None = None,
+                    schema_name: str = "response",
+                    backend: str | None = None,
+                    temperature: float | None = None,
+                    reasoning: bool | None = None) -> dict:
+    """Route to the correct provider; only `claude_api` supports prompt caching, others get cached_prefix concatenated into the prompt (no cache discount).
+
+    response_schema is enforced where the API can: an OpenAI-style json_schema
+    response format (openai/openrouter/lmstudio), Ollama's `format`, or a forced
+    tool call on claude_api. The three CLI providers have no such knob, so they
+    fall back to carrying the schema in the prompt.
+
+    `backend` pins the OpenRouter endpoint (see openrouter_ladder); it means
+    nothing to the other providers, which each have exactly one backend.
+
+    `temperature` is passed to the providers that take one; the three CLI providers
+    have no such knob and run at their own default. `reasoning=False` asks OpenRouter to
+    turn a reasoning model's thinking off: on the résumé schema that cut deepseek-v4.1-flash
+    from 10k output tokens in 30s to 2.7k in 8s, with the same answer.
+    """
     if provider == "claude_api":
-        return await _call_claude_api(prompt, system, model, api_key, max_tokens, cached_prefix=cached_prefix)
+        return await _call_claude_api(prompt, system, model, api_key, max_tokens, cached_prefix=cached_prefix,
+                                      response_schema=response_schema, schema_name=schema_name,
+                                      temperature=temperature)
     combined = f"{cached_prefix}\n\n{prompt}" if cached_prefix else prompt
     if provider == "claude_code":
-        return await _call_claude_code(combined, system, model, max_tokens)
+        return await _call_claude_code(combined, system, model, max_tokens,
+                                       response_schema, reasoning)
     elif provider == "codex_cli":
-        return await _call_codex_cli(combined, system, model, max_tokens)
+        return await _call_codex_cli(combined, system, model, max_tokens, response_schema)
     elif provider == "antigravity_cli":
-        return await _call_antigravity_cli(combined, system, model, max_tokens)
+        return await _call_antigravity_cli(_schema_in_prompt(combined, response_schema), system, model, max_tokens)
     elif provider == "openai":
-        return await _call_openai(combined, system, model, api_key, max_tokens)
+        return await _call_openai(combined, system, model, api_key, max_tokens,
+                                  response_schema=response_schema, schema_name=schema_name,
+                                  temperature=temperature)
     elif provider == "openrouter":
         # OpenRouter is OpenAI-API-compatible — same client, different base URL.
         # One key reaches every vendor's models (model slug is vendor-prefixed).
+        routing = _openrouter_routing(backend, response_schema) or {}
+        if reasoning is False:
+            routing = {**routing, "reasoning": {"enabled": False}}
         return await _call_openai(combined, system, model, api_key, max_tokens,
-                                  base_url=OPENROUTER_BASE_URL)
+                                  base_url=OPENROUTER_BASE_URL,
+                                  extra_body=routing or None,
+                                  response_schema=response_schema, schema_name=schema_name,
+                                  temperature=temperature)
     elif provider == "lmstudio":
         # LM Studio serves an OpenAI-compatible API on :1234; no key (client wants a non-empty string).
         # Override with LMSTUDIO_BASE_URL when the backend is containerized (e.g. http://host.docker.internal:1234/v1).
@@ -260,16 +426,27 @@ async def _dispatch(provider: str, model: str, api_key: str,
         # LM Studio's OpenAI-compatible endpoint takes reasoning_effort="none" to turn it off.
         return await _call_openai(combined, system, model, api_key or "lm-studio", max_tokens,
                                   base_url=base,
-                                  extra_body={"reasoning_effort": "none"})
+                                  extra_body={"reasoning_effort": "none"},
+                                  response_schema=response_schema, schema_name=schema_name,
+                                  temperature=temperature)
     elif provider == "ollama":
-        return await _call_ollama(combined, system, model, max_tokens)
+        return await _call_ollama(combined, system, model, max_tokens,
+                                  response_schema=response_schema, temperature=temperature)
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")
 
 
 async def _call_claude_api(prompt: str, system: str, model: str, api_key: str,
-                           max_tokens: int, cached_prefix: str | None = None) -> dict:
-    """Call Claude via the Anthropic SDK; cached_prefix is sent as a separate cache_control block for ~10x cheaper reuse, but is ignored below the 1024-token (Sonnet/Opus) minimum."""
+                           max_tokens: int, cached_prefix: str | None = None,
+                           response_schema: dict | None = None, schema_name: str = "response",
+                           temperature: float | None = None) -> dict:
+    """Call Claude via the Anthropic SDK; cached_prefix is sent as a separate cache_control block for ~10x cheaper reuse, but is ignored below the 1024-token (Sonnet/Opus) minimum.
+
+    The Messages API has no response_format, so a response_schema is enforced the
+    way Anthropic intends: a single tool whose input_schema is that schema, with
+    tool_choice forcing it. The tool's arguments come back as the reply text, so
+    callers keep parsing a JSON string either way.
+    """
     import anthropic
     key = api_key or __import__('os').getenv("ANTHROPIC_API_KEY", "")
     client = anthropic.AsyncAnthropic(api_key=key)
@@ -282,17 +459,38 @@ async def _call_claude_api(prompt: str, system: str, model: str, api_key: str,
     else:
         content = prompt  # plain string — no cache_control
 
+    schema_kwargs = {}
+    if response_schema:
+        schema_kwargs = {
+            "tools": [{"name": schema_name,
+                       "description": f"Return the {schema_name} as structured data.",
+                       "input_schema": response_schema}],
+            "tool_choice": {"type": "tool", "name": schema_name},
+        }
+
+    if temperature is not None:
+        schema_kwargs["temperature"] = temperature
     response = await client.messages.create(
         model=model,
         max_tokens=max_tokens,
         system=system,
         messages=[{"role": "user", "content": content}],
+        **schema_kwargs,
     )
+
+    if response_schema:
+        # The forced call is the whole reply; hand its arguments back as JSON text.
+        block = next((b for b in response.content if getattr(b, "type", "") == "tool_use"), None)
+        if block is None:
+            raise RuntimeError(f"Claude returned no {schema_name} tool call")
+        text = json.dumps(block.input)
+    else:
+        text = response.content[0].text.strip()
 
     # Extract usage — cache_* attributes may be absent on older SDK versions or non-cached calls
     usage = response.usage
     return {
-        "text": response.content[0].text.strip(),
+        "text": text,
         "usage": {
             "input_tokens": getattr(usage, "input_tokens", 0),
             "output_tokens": getattr(usage, "output_tokens", 0),
@@ -302,17 +500,50 @@ async def _call_claude_api(prompt: str, system: str, model: str, api_key: str,
     }
 
 
-async def _call_claude_code(prompt: str, system: str, model: str, max_tokens: int) -> dict:
+# Whether the installed `claude` supports --json-schema. None until probed; the answer
+# cannot change under a running process, so it is asked once.
+_CLAUDE_JSON_SCHEMA: bool | None = None
+
+
+async def _claude_supports_json_schema() -> bool:
+    """Whether this `claude` can constrain its reply to a schema rather than be asked to.
+
+    The flag arrived after this adapter was written. An older CLI errors on an unknown
+    option, which would turn every call into a failure, so support is checked once and
+    the prompt-level request stays as the fallback.
+    """
+    global _CLAUDE_JSON_SCHEMA
+    if _CLAUDE_JSON_SCHEMA is None:
+        try:
+            rc, out, _ = await _run_cli(["claude", "--help"], b"", timeout=30)
+            _CLAUDE_JSON_SCHEMA = rc == 0 and b"--json-schema" in out
+        except Exception as e:
+            logger.warning(f"Could not ask the claude CLI about --json-schema ({e}); "
+                           "falling back to the schema in the prompt")
+            _CLAUDE_JSON_SCHEMA = False
+        logger.info(f"Claude Code: structured output via --json-schema is "
+                    f"{'available' if _CLAUDE_JSON_SCHEMA else 'NOT available'}")
+    return _CLAUDE_JSON_SCHEMA
+
+
+async def _call_claude_code(prompt: str, system: str, model: str, max_tokens: int,
+                             response_schema: dict | None = None,
+                             reasoning: bool | None = None) -> dict:
     """Call Claude via claude CLI subprocess. Returns {text, usage}. Caching not supported."""
     import os
     import json as _json
-    full_prompt = f"{system}\n\n{prompt}"
     cmd = ["claude", "-p", "--output-format", "json"]
     if model:
         cmd.extend(["--model", model])
 
-    # Build env: pass CLAUDE_CODE_OAUTH_TOKEN, explicitly EXCLUDE ANTHROPIC_API_KEY
-    # so it uses subscription billing, not API credits
+    cmd.extend(["--effort", {False: "low", True: "medium"}.get(reasoning, "medium")])
+
+    if response_schema and await _claude_supports_json_schema():
+        cmd.extend(["--json-schema", _json.dumps(response_schema)])
+        full_prompt = f"{system}\n\n{prompt}"
+    else:
+        full_prompt = f"{system}\n\n{_schema_in_prompt(prompt, response_schema)}"
+
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
 
     rc, stdout, stderr = await _run_cli(cmd, full_prompt.encode(), env=env)
@@ -401,7 +632,8 @@ async def _run_cli(cmd: list[str], stdin: bytes, env: dict | None = None, timeou
     return process.returncode, stdout, stderr
 
 
-async def _call_codex_cli(prompt: str, system: str, model: str, max_tokens: int) -> dict:
+async def _call_codex_cli(prompt: str, system: str, model: str, max_tokens: int,
+                          response_schema: dict | None = None) -> dict:
     """Call Codex CLI using its existing ChatGPT login; run in an empty read-only workspace."""
     import json as _json
     import os
@@ -418,6 +650,17 @@ async def _call_codex_cli(prompt: str, system: str, model: str, max_tokens: int)
 
         full_prompt = f"{system}\n\n{prompt}"
         with tempfile.TemporaryDirectory(prefix="jobnavigator-codex-") as workdir:
+            # `--output-schema` constrains the final message the way an API's response_format
+            # does, so the schema stops being a request in the prompt that the model may
+            # answer around. It takes a path rather than a string, and the ephemeral
+            # workspace is already here, so the file lives and dies with the call.
+            schema_path = ""
+            if response_schema:
+                schema_path = os.path.join(workdir, "response_schema.json")
+                with open(schema_path, "w", encoding="utf-8") as fh:
+                    _json.dump(response_schema, fh)
+            else:
+                full_prompt = f"{system}\n\n{_schema_in_prompt(prompt, None)}"
             cmd = [
                 "codex", "exec", "--ephemeral", "--ignore-user-config", "--ignore-rules",
                 "--skip-git-repo-check", "--sandbox", "read-only", "--color", "never",
@@ -427,6 +670,8 @@ async def _call_codex_cli(prompt: str, system: str, model: str, max_tokens: int)
             ]
             if model:
                 cmd.extend(["--model", model])
+            if schema_path:
+                cmd.extend(["--output-schema", schema_path])
             cmd.append("-")
             rc, stdout, stderr = await _run_cli(cmd, full_prompt.encode(), env=env)
 
@@ -631,10 +876,16 @@ async def _call_antigravity_cli(prompt: str, system: str, model: str, max_tokens
 
 
 async def _call_openai(prompt: str, system: str, model: str, api_key: str, max_tokens: int,
-                       base_url: str | None = None, extra_body: dict | None = None) -> dict:
-    """Call the OpenAI API, or any OpenAI-compatible endpoint via base_url."""
+                       base_url: str | None = None, extra_body: dict | None = None,
+                       response_schema: dict | None = None, schema_name: str = "response",
+                       temperature: float | None = None) -> dict:
+    """Call the OpenAI API, or any OpenAI-compatible endpoint via base_url; response_schema is sent as a strict json_schema response format."""
     client = _openai_client(api_key, base_url)  # base_url=None → OpenAI default
     kwargs = {"extra_body": extra_body} if extra_body else {}
+    if temperature is not None:
+        kwargs["temperature"] = temperature
+    if response_schema:
+        kwargs["response_format"] = _json_schema_format(response_schema, schema_name)
     response = await client.chat.completions.create(
         model=model,
         max_tokens=max_tokens,
@@ -644,9 +895,18 @@ async def _call_openai(prompt: str, system: str, model: str, api_key: str, max_t
         ],
         **kwargs,
     )
+    choice = response.choices[0]
+    # A reply cut off at max_tokens is unusable — under a schema it is a JSON object
+    # with no closing braces. Backends differ wildly in how much they pad (one emitted
+    # 4875 tokens where another used 2030 for the same input), so this is the backend's
+    # problem and worth stepping the ladder for, not a parse error to show the user.
+    if choice.finish_reason == "length":
+        raise BackendUnavailableError(
+            f"reply truncated at max_tokens={max_tokens} (finish_reason=length)")
+
     usage = response.usage
     return {
-        "text": response.choices[0].message.content.strip(),
+        "text": choice.message.content.strip(),
         "usage": {
             "input_tokens": getattr(usage, "prompt_tokens", 0),
             "output_tokens": getattr(usage, "completion_tokens", 0),
@@ -656,19 +916,25 @@ async def _call_openai(prompt: str, system: str, model: str, api_key: str, max_t
     }
 
 
-async def _call_ollama(prompt: str, system: str, model: str, max_tokens: int) -> dict:
-    """Call local Ollama instance. Returns {text, usage}."""
+async def _call_ollama(prompt: str, system: str, model: str, max_tokens: int,
+                       response_schema: dict | None = None,
+                       temperature: float | None = None) -> dict:
+    """Call local Ollama instance. Returns {text, usage}. Ollama takes a JSON Schema directly as `format`."""
     import httpx
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "system": system,
+        "stream": False,
+        "options": {"num_predict": max_tokens,
+                    **({"temperature": temperature} if temperature is not None else {})},
+    }
+    if response_schema:
+        payload["format"] = response_schema
     async with httpx.AsyncClient(timeout=120) as client:
         response = await client.post(
             "http://localhost:11434/api/generate",
-            json={
-                "model": model,
-                "prompt": prompt,
-                "system": system,
-                "stream": False,
-                "options": {"num_predict": max_tokens},
-            },
+            json=payload,
         )
         response.raise_for_status()
         data = response.json()

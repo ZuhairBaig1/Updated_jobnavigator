@@ -16,11 +16,10 @@ def _template_names():
 
 
 def _render(name, header):
-    from jinja2 import Environment, FileSystemLoader
-    from markupsafe import Markup
-    env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR / name)))
-    # the real renderer's only custom filter (routes_resumes._render_html)
-    env.filters["bold"] = lambda text: Markup(re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text or ""))
+    # The renderer's own environment, not a copy of it: a second copy drifts the moment a
+    # filter is added, and these tests then fail on markup the app renders perfectly well.
+    from backend.api.routes_resumes import resume_template_env
+    env = resume_template_env(TEMPLATES_DIR / name)
     return env.get_template("template.html.j2").render(
         header=header, summary="A summary.", experience=[], skills={},
         education=[], projects=[], publications=[],

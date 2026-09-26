@@ -99,6 +99,12 @@ def _flatten_resume(json_data: dict) -> str:
             tail = " ".join(x for x in (loc, years) if x)
             parts.append(f"{degree} — {school}, {tail}".strip(" —,"))
 
+    certifications = json_data.get("certifications") or []
+    if certifications:
+        parts.append("## Certifications")
+        for cert in certifications:
+            parts.append(f"- {cert}")
+
     projects = json_data.get("projects") or []
     if projects:
         parts.append("## Projects")

@@ -1,0 +1,42 @@
+# Backend image for a hosted deployment (Render and anything else that runs a container).
+#
+# It differs from Dockerfile.backend in two ways, both about size. The full image is
+# ~9 GB, which is more than a small hosted plan will build or boot comfortably:
+#
+#   * docling is left out (6.8 GB of PyTorch and layout models). PDF_EXTRACTOR
+#     defaults to pdfplumber, and warm_docling() already treats a missing docling as
+#     a warning, so résumé import works exactly as it does locally.
+#   * the subscription CLIs — Claude Code, Codex, Antigravity, and the Node runtime
+#     they need — are left out (1.3 GB). They authenticate interactively against a
+#     developer's machine, which a hosted container cannot do, so a deployment has to
+#     use an API-key provider such as OpenRouter regardless.
+#
+# What is kept: Playwright's Chromium, because PDF export renders through it and the
+# résumé download depends on that.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libpq-dev curl git \
+    # Playwright Chromium runtime libraries
+    libnss3 libnspr4 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 \
+    libcups2 libdrm2 libxkbcommon0 libatspi2.0-0 libxcomposite1 \
+    libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 \
+    libcairo2 libasound2t64 libwayland-client0 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY backend/requirements-render.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+RUN playwright install chromium
+
+COPY backend/ ./backend/
+
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+# Render (and most hosts) hand the port in as $PORT and expect the process to bind it.
+# The local default keeps `docker run` working without one being set.
+ENV PORT=8000
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

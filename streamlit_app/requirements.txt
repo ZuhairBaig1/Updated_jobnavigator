@@ -1,0 +1,3 @@
+# tertiary buttons (the small tailored-copy links) need 1.39
+streamlit>=1.39
+requests>=2.31

@@ -24,7 +24,7 @@ async def test_tailor_end_to_end(api_client, test_db, monkeypatch):
     call_started = asyncio.Event()
     call_finish = asyncio.Event()
 
-    async def fake_call(prompt, system, max_tokens):
+    async def fake_call(prompt, system, max_tokens, **kwargs):
         call_started.set()
         await call_finish.wait()
         return {"text": '{"summary":"tailored"}', "usage": {}}

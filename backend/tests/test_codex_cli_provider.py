@@ -149,7 +149,7 @@ async def test_cli_runner_kills_on_timeout(monkeypatch):
 async def test_call_llm_skips_retries_and_goes_to_fallback_on_non_retryable(monkeypatch):
     attempts = []
 
-    async def fake_dispatch(provider, model, api_key, prompt, system, max_tokens, cached_prefix=None):
+    async def fake_dispatch(provider, model, api_key, prompt, system, max_tokens, cached_prefix=None, **kwargs):
         attempts.append(provider)
         if provider == "codex_cli":
             raise NonRetryableLLMError("Codex usage limit reached")

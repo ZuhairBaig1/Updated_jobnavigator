@@ -21,7 +21,12 @@ html, body {
   color: #222;
   background: #fff;
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+  /* No ligatures or contextual alternates: those glyphs carry no Unicode mapping, so
+     a PDF reader extracts "workflows" as "work\x00ows" and "(RAG)" as "\x00RAG)", and a
+     resume parser sees broken words. Separate glyphs cost nothing here and always extract. */
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "clig" 0, "calt" 0, "dlig" 0, "hlig" 0;
+  text-rendering: optimizeSpeed;
 }
 
 .page {
@@ -77,7 +82,7 @@ html, body {
   font-size: 8.5pt;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 2px;
+  letter-spacing: normal;
   color: #888;
   margin-bottom: 5pt;
 }
@@ -194,6 +199,14 @@ ul.bullets li::before {
   margin-left: 8pt;
 }
 .edu-degree { font-size: 9pt; color: #555; }
+/* Each contact item is unbreakable: the line may wrap between items, never inside
+   one. Without this the browser wraps at any space -- including the ones inside
+   "+91 78421 32657" and "Hyderabad, Telangana, India" -- and a resume parser reads
+   the halves as two separate tokens instead of one phone number or one city. */
+.contact .ci { white-space: nowrap; }
+/* Hyphenated compounds never split across lines: a trailing "processed-" is stripped by
+   any reader that reflows wrapped text, which turns "processed-event" into one word. */
+.nb { white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -208,9 +221,9 @@ ul.bullets li::before {
       {% for item in (header.contact_items or []) %}
         {% if item.url %}
           {% set href = item.url if (item.url.startswith('http') or item.url.startswith('mailto')) else 'https://' ~ item.url %}
-          <a href="{{ href }}">{{ item.text }}</a>
+          <span class="ci"><a href="{{ href }}">{{ item.text }}</a></span>
         {% else %}
-          <span>{{ item.text }}</span>
+          <span class="ci">{{ item.text }}</span>
         {% endif %}
       {% endfor %}
     </div>
@@ -219,24 +232,50 @@ ul.bullets li::before {
 
   {% if summary %}
   <div class="section" style="margin-top: 2pt">
-    <div class="summary-text">{{ summary }}</div>
+    {% if ats_layout %}<div class="section-title">Professional Summary</div>{% endif %}
+    <div class="summary-text">{{ summary | nb }}</div>
   </div>
   {% endif %}
 
+  {# Skills render once, placed by layout: after Experience by default, before it in a
+     tailored copy's ATS layout (Header, Professional Summary, Technical Skills, Work
+     Experience, Projects, Education, Certifications). #}
+  {% set skills_section %}
+  {% if skills %}
+  <div class="section">
+    <div class="section-title">{{ 'Technical Skills' if ats_layout else 'Skills' }}</div>
+    <div class="skills-grid">
+      {% if skills is mapping %}
+        {% for label, value in skills.items() %}
+        <span class="skill-label">{{ label }}</span>
+        <span class="skill-value">{{ value | nb }}</span>
+        {% endfor %}
+      {% else %}
+        {% for sk in skills %}
+        <span class="skill-label">{{ sk.category }}</span>
+        <span class="skill-value">{{ sk.items | nb }}</span>
+        {% endfor %}
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+  {% endset %}
+  {% if ats_layout %}{{ skills_section }}{% endif %}
+
   {% if experience %}
   <div class="section">
-    <div class="section-title">Experience</div>
+    <div class="section-title">{{ 'Work Experience' if ats_layout else 'Experience' }}</div>
     {% for job in experience %}
     <div class="entry">
       <div class="entry-row">
         <span class="entry-primary">{{ job.title }}{% if job.company %} <span style="font-weight:400;color:#888">at</span> {{ job.company }}{% endif %}</span>
-        <span class="entry-date">{{ job.dates }}</span>
+        <span class="entry-date">{{ job.date }}</span>
       </div>
       {% if job.location %}
       <div style="font-size: 8.5pt; color: #888;">{{ job.location }}</div>
       {% endif %}
       {% if job.description %}
-      <div class="entry-description">{{ job.description }}</div>
+      <div class="entry-description">{{ job.description | nb }}</div>
       {% endif %}
       {% if job.bullets %}
       <ul class="bullets">
@@ -250,42 +289,9 @@ ul.bullets li::before {
   </div>
   {% endif %}
 
-  {% if skills %}
-  <div class="section">
-    <div class="section-title">Skills</div>
-    <div class="skills-grid">
-      {% if skills is mapping %}
-        {% for label, value in skills.items() %}
-        <span class="skill-label">{{ label }}</span>
-        <span class="skill-value">{{ value }}</span>
-        {% endfor %}
-      {% else %}
-        {% for sk in skills %}
-        <span class="skill-label">{{ sk.category }}</span>
-        <span class="skill-value">{{ sk.items }}</span>
-        {% endfor %}
-      {% endif %}
-    </div>
-  </div>
-  {% endif %}
-
-  {% if education %}
-  <div class="section">
-    <div class="section-title">Education</div>
-    {% for edu in education %}
-    <div class="edu-entry">
-      <div class="edu-row">
-        <span class="edu-school">{{ edu.school }}</span>
-        <span class="edu-location">{{ edu.location }}</span>
-      </div>
-      {% if edu.degree %}
-      <div class="edu-degree">{{ edu.degree }}</div>
-      {% endif %}
-    </div>
-    {% endfor %}
-  </div>
-  {% endif %}
-
+  {# Projects render once, placed by layout: after Education by default, right after
+     Work Experience in a tailored copy's ATS layout. #}
+  {% set projects_section %}
   {% if projects %}
   <div class="section">
     <div class="section-title">Projects</div>
@@ -293,7 +299,7 @@ ul.bullets li::before {
     <div class="entry">
       <div class="entry-primary">{{ project.name or project.title }}</div>
       {% if project.url %}<div class="entry-url"><a href="{{ project.url }}">{{ project.url }}</a></div>{% endif %}
-      {% if project.description %}<div class="entry-description">{{ project.description }}</div>{% endif %}
+      {% if project.description %}<div class="entry-description">{{ project.description | nb }}</div>{% endif %}
       {% if project.bullets %}
       <ul class="bullets">
         {% for bullet in project.bullets %}<li>{{ bullet | bold }}</li>{% endfor %}
@@ -303,6 +309,40 @@ ul.bullets li::before {
     {% endfor %}
   </div>
   {% endif %}
+  {% endset %}
+  {% if ats_layout %}{{ projects_section }}{% endif %}
+
+  {% if not ats_layout %}{{ skills_section }}{% endif %}
+
+  {% if education %}
+  <div class="section">
+    <div class="section-title">Education</div>
+    {% for edu in education %}
+    <div class="edu-entry">
+      <div class="edu-row">
+        <span class="edu-school">{{ edu.school }}</span>
+        {% if not ats_layout %}<span class="edu-location">{{ edu.location }}</span>{% endif %}
+      </div>
+      {# The graduation date prints on the degree line, never in a right-hand column: a
+         parser ties a date to the text nearest it, and one a column away reads as the
+         school's rather than the degree's. #}
+      {% set edu_line = [edu.degree, edu.years if ats_layout else '', edu.grade] | select | join(' · ') %}
+      {% if edu_line %}<div class="edu-degree">{{ edu_line | nb }}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if certifications %}
+  <div class="section">
+    <div class="section-title">Certifications</div>
+    <ul class="bullets">
+      {% for cert in certifications %}<li>{{ cert | bold }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if not ats_layout %}{{ projects_section }}{% endif %}
 
   {% if publications %}
   <div class="section">

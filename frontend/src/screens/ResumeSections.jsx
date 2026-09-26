@@ -19,8 +19,10 @@ export const kb = (fn, role = 'button') => ({
   role,
   onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(e) } },
 })
-export const EMPTY = { header: { name: '', contact_items: [] }, summary: '', experience: [], skills: {}, education: [], projects: [], publications: [] }
-export const SECTION_ORDER = ['Header', 'Summary', 'Experience', 'Skills', 'Education', 'Projects', 'Publications']
+export const EMPTY = { header: { name: '', contact_items: [] }, summary: '', skills: {}, experience: [], projects: [], education: [], certifications: [], publications: [] }
+// The ATS order a structured or tailored résumé prints in, with Publications kept last
+// for older résumés that still carry one.
+export const SECTION_ORDER = ['Header', 'Summary', 'Skills', 'Experience', 'Projects', 'Education', 'Certifications', 'Publications']
 
 // Section counts for the collapsed header, from whichever sections exist.
 export const sectionCounts = (data) => ({
@@ -28,8 +30,40 @@ export const sectionCounts = (data) => ({
   Skills: Object.keys(data.skills || {}).length,
   Education: data.education?.length || 0,
   Projects: data.projects?.length || 0,
+  Certifications: data.certifications?.length || 0,
   Publications: data.publications?.length || 0,
 })
+
+// Tailoring may drop a bullet, so the nth bullet of a tailored role is no longer the nth
+// of its base: comparing by position labels the survivors as "changed" and offers to
+// restore the wrong sentence. Pair each tailored bullet with the base bullet it was
+// written from — the closest by word overlap, each base bullet claimed once — and read
+// -1 as a bullet with no base behind it.
+const bulletWords = (s) => new Set(String(s || '').toLowerCase().match(/[a-z0-9]+/g) || [])
+export function pairBullets(baseBullets = [], copyBullets = []) {
+  const baseWords = baseBullets.map(bulletWords)
+  const taken = new Set()
+  return copyBullets.map((txt, i) => {
+    const words = bulletWords(txt)
+    let best = -1, bestScore = 0
+    baseBullets.forEach((b, j) => {
+      if (taken.has(j)) return
+      let score
+      if (b === txt) score = 1
+      else {
+        const shared = [...words].filter((w) => baseWords[j].has(w)).length
+        const union = new Set([...words, ...baseWords[j]]).size
+        score = union ? shared / union : 0
+      }
+      // A tie goes to the bullet that sat in this position, which is the common case.
+      if (score > bestScore || (score === bestScore && score > 0 && j === i)) { bestScore = score; best = j }
+    })
+    // Below this the two bullets share little but stopwords: treat it as a new bullet.
+    if (bestScore < 0.34) return -1
+    taken.add(best)
+    return best
+  })
+}
 
 // The two mutation helpers both screens use. `onData(next)` owns persistence.
 export function makeMutators(data, onData) {
@@ -151,6 +185,7 @@ export function SectionEditor({ name, data, setField, mutate, baseData, emptyNot
     case 'Skills': return <SkillsEditor emptyNote={emptyNote} data={data} mutate={mutate} baseSkills={baseData?.skills} onError={onError} onRemoved={onRemoved} />
     case 'Education': return <EducationEditor emptyNote={emptyNote} data={data} setField={setField} mutate={mutate} onRemoved={onRemoved} />
     case 'Projects': return <ProjectsEditor emptyNote={emptyNote} data={data} setField={setField} mutate={mutate} onRemoved={onRemoved} />
+    case 'Certifications': return <CertificationsEditor emptyNote={emptyNote} data={data} setField={setField} mutate={mutate} onRemoved={onRemoved} />
     case 'Publications': return <PublicationsEditor emptyNote={emptyNote} data={data} setField={setField} mutate={mutate} onRemoved={onRemoved} />
     default: return null
   }
@@ -210,8 +245,9 @@ export function ExperienceEditor({ emptyNote, data, setField, mutate, baseExp, o
   const bulletMark = (i, bi, txt) => {
     if (!baseExp) return null
     const bb = baseExp[i]?.bullets || []
-    if (bi >= bb.length) return { kind: 'added', label: 'Added by tailoring' }
-    if (bb[bi] !== txt) return { kind: 'changed', label: 'Changed by tailoring', base: bb[bi] }
+    const j = pairBullets(bb, exp[i]?.bullets || [])[bi]
+    if (j < 0) return { kind: 'added', label: 'Added by tailoring' }
+    if (bb[j] !== txt) return { kind: 'changed', label: 'Changed by tailoring', base: bb[j] }
     return null
   }
   const entryChanged = (e, i) => (e.bullets || []).some((b, bi) => bulletMark(i, bi, b)) || (e.suggested_bullets || []).length > 0
@@ -383,8 +419,10 @@ export function EducationEditor({ emptyNote, data, setField, mutate, onRemoved }
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
             <MicroField label="Degree" value={e.degree} onChange={(v) => setField(`education.${i}.degree`, v)} />
-            <MicroField label="Years" value={e.years} onChange={(v) => setField(`education.${i}.years`, v)} placeholder="2015 – 2019" />
+            <MicroField label="Years" value={e.years} onChange={(v) => setField(`education.${i}.years`, v)} placeholder="Jun 2025 / 2015 – 2019" />
           </div>
+          {/* A structured résumé prints the graduation date in Years, on the degree line, and the mark here. */}
+          <MicroField label="Grade" value={e.grade} onChange={(v) => setField(`education.${i}.grade`, v)} placeholder="CGPA: 8.1 / 92.6%" />
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}><RemoveLink onClick={() => undoRemove('Removed education entry',
             (d) => d.education.splice(i, 1),
             (d) => { d.education = d.education || []; d.education.splice(i, 0, e) })} /></div>
@@ -427,6 +465,26 @@ export function ProjectsEditor({ emptyNote, data, setField, mutate, onRemoved })
       ))}
       {(data.projects || []).length === 0 && <EmptyState note={emptyNote} what="projects" />}
       <DashedAdd big onClick={() => mutate((d) => { d.projects = d.projects || []; d.projects.push({ name: '', description: '', url: '', bullets: [] }) })}>+ Add project</DashedAdd>
+    </div>
+  )
+}
+// Certifications are plain lines, one credential each — the résumé prints them as a list.
+export function CertificationsEditor({ emptyNote, data, setField, mutate, onRemoved }) {
+  const certs = data.certifications || []
+  const undoRemove = useUndoRemove(mutate, onRemoved)
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 10 }}>
+      {certs.length === 0 ? <EmptyState note={emptyNote} what="certifications" /> : certs.map((c, i) => (
+        /* ui: keep — a certification is one line of prose, so it rides the same field-shaped row as a bullet */
+        <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 10px', border: '1px solid var(--line)', background: 'var(--surface)', borderRadius: 'var(--radius-field)' }}>
+          <span style={{ flex: '0 0 auto', color: 'var(--muted)', fontSize: 11, lineHeight: '19px' }}>—</span>
+          <BulletText value={c} onChange={(v) => setField(`certifications.${i}`, v)} placeholder="Credential — issuer" />
+          <RemoveX size={10} lh="19px" onClick={() => undoRemove('Removed certification',
+            (d) => d.certifications.splice(i, 1),
+            (d) => { d.certifications = d.certifications || []; d.certifications.splice(i, 0, c) })} />
+        </div>
+      ))}
+      <DashedAdd big onClick={() => mutate((d) => { d.certifications = d.certifications || []; d.certifications.push('') })}>+ Add certification</DashedAdd>
     </div>
   )
 }

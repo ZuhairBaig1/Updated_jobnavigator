@@ -26,7 +26,7 @@ async def test_tailor_with_persona_as_base(test_db, monkeypatch):
 
     captured = {}
 
-    async def fake_call(prompt, system, max_tokens=3000):
+    async def fake_call(prompt, system, max_tokens=3000, **kwargs):
         captured["prompt"] = prompt
         return {"text": '{"summary": "tailored", "experience": [{"bullets": ["x"]}], "skills": {}}',
                 "usage": {}}
@@ -66,7 +66,7 @@ async def test_tailor_with_persona_as_base_skips_double_merge(test_db, monkeypat
 
     captured = {}
 
-    async def fake_call(prompt, system, max_tokens=3000):
+    async def fake_call(prompt, system, max_tokens=3000, **kwargs):
         captured["prompt"] = prompt
         return {"text": '{"summary": "x", "experience": [{"bullets": ["y"]}], "skills": {}}',
                 "usage": {}}
@@ -113,7 +113,7 @@ async def test_tailor_persona_uses_persona_tailor_prompt(test_db, monkeypatch):
 
     captured = {}
 
-    async def fake_call(prompt, system, max_tokens=3000):
+    async def fake_call(prompt, system, max_tokens=3000, **kwargs):
         captured["prompt"] = prompt
         return {"text": '{"summary": "x", "experience": [{"bullets": ["y"]}], "skills": {}}',
                 "usage": {}}
@@ -144,7 +144,7 @@ async def test_tailor_persona_falls_back_when_persona_prompt_empty(test_db, monk
 
     captured = {}
 
-    async def fake_call(prompt, system, max_tokens=3000):
+    async def fake_call(prompt, system, max_tokens=3000, **kwargs):
         captured["prompt"] = prompt
         return {"text": '{"summary": "x", "experience": [{"bullets": ["y"]}], "skills": {}}',
                 "usage": {}}
@@ -172,7 +172,7 @@ async def test_tailor_resume_does_not_use_persona_prompt(test_db, monkeypatch):
 
     captured = {}
 
-    async def fake_call(prompt, system, max_tokens=3000):
+    async def fake_call(prompt, system, max_tokens=3000, **kwargs):
         captured["prompt"] = prompt
         return {"text": '{"summary": "x", "experience": [], "skills": {}}', "usage": {}}
 

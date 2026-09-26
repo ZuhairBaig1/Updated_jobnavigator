@@ -9,7 +9,7 @@ import { useTitle } from '../useTitle'
 // The résumé-content editors are shared with /persona (a Persona's
 // resume_content is the same shape as a Resume's json_data).
 import {
-  EMPTY, SECTION_ORDER, sectionCounts, makeMutators,
+  EMPTY, SECTION_ORDER, sectionCounts, makeMutators, pairBullets,
   SectionShell, SectionEditor, BandRule,
 } from './ResumeSections'
 import { Band, Button, Check, ChoiceCard, ChoiceModal, ChoiceRow, FooterRow, Heading, HeaderRow, Helper, IconButton, Input, Label, Menu, MenuHead, MenuItem, ModalPanel, Mono, NavLink, Pill, Rule, ScoreRing, Spinner, Surface, Textarea, ToolbarTrigger } from '../ui'
@@ -40,9 +40,18 @@ function computeChanges(base, copy) {
   ;(copy.experience || []).forEach((ce, i) => {
     const be = (base.experience || [])[i] || {}
     const bb = be.bullets || [], cb = ce.bullets || []
+    // Paired on content, not position: a dropped bullet would otherwise diff every
+    // survivor against the wrong base text (and restore it on decline).
+    const pairs = pairBullets(bb, cb)
     cb.forEach((txt, j) => {
-      if (j < bb.length) { const d = wordDiff(bb[j], txt); if (d) out.push({ key: `exp${i}b${j}`, where: `Experience · ${ce.company || 'role'} · bullet ${j + 1}`, kind: 'modified', path: `experience.${i}.bullets.${j}`, baseText: bb[j], ...d }) }
+      const bi = pairs[j]
+      if (bi >= 0) { const d = wordDiff(bb[bi], txt); if (d) out.push({ key: `exp${i}b${j}`, where: `Experience · ${ce.company || 'role'} · bullet ${j + 1}`, kind: 'modified', path: `experience.${i}.bullets.${j}`, baseText: bb[bi], ...d }) }
       else out.push({ key: `exp${i}nb${j}`, where: `Experience · ${ce.company || 'role'} · new bullet`, kind: 'added', before: '', removed: '', added: txt, after: '', text: txt })
+    })
+    // A base bullet no tailored bullet was written from is gone from the copy; the
+    // review lists it so a drop is a decision you see rather than one you discover.
+    bb.forEach((txt, bi) => {
+      if (!pairs.includes(bi)) out.push({ key: `exp${i}d${bi}`, where: `Experience · ${ce.company || 'role'} · dropped bullet`, kind: 'dropped', expIdx: i, baseIdx: bi, before: '', removed: txt, added: '', after: '', text: txt })
     })
     ;(ce.suggested_bullets || []).forEach((sb, k) => out.push({ key: `exp${i}sb${k}`, where: `Experience · ${ce.company || 'role'} · suggested bullet`, kind: 'suggested', expIdx: i, sbIdx: k, before: '', removed: '', added: sb, after: '', text: sb }))
   })
@@ -438,6 +447,10 @@ export default function ResumeEditor() {
         d.experience?.forEach((e) => { if (e.bullets) e.bullets = e.bullets.filter((b) => b !== c.text) })
       } else if (c.kind === 'suggested' && !off) {
         const e = d.experience?.[c.expIdx]; if (e) { e.bullets = e.bullets || []; e.bullets.push(c.text) }
+      } else if (c.kind === 'dropped' && off) {
+        // declining a drop puts the bullet back where the base résumé had it
+        const e = d.experience?.[c.expIdx]
+        if (e) { e.bullets = e.bullets || []; e.bullets.splice(Math.min(c.baseIdx, e.bullets.length), 0, c.text) }
       }
     })
     ;(d.experience || []).forEach((e) => { delete e.suggested_bullets })
@@ -837,18 +850,21 @@ function ReviewModal({ changes, onClose, onApply }) {
             const off = !!declined[c.key]
             const pending = c.kind === 'suggested'   // not in json_data yet
             const live = !off
-            const added = c.kind === 'modified' ? (off ? c.removed : c.added) : c.added
-            const removed = c.kind === 'modified' ? (off ? c.added : c.removed) : ''
+            // A dropped bullet has no diff of its own: it reads struck through while it is
+            // out of the document, and plain once declining puts it back.
+            const isDrop = c.kind === 'dropped'
+            const added = c.kind === 'modified' ? (off ? c.removed : c.added) : isDrop ? (off ? c.text : '') : c.added
+            const removed = c.kind === 'modified' ? (off ? c.added : c.removed) : isDrop && !off ? c.text : ''
             return (
               <div key={c.key} style={{ border: `1px solid ${!live ? 'var(--line)' : pending ? 'var(--warn-line)' : 'var(--change-soft)'}`, borderRadius: 'var(--radius-card)', padding: '11px 13px', display: 'flex', flexDirection: 'column', gap: 7, background: !live ? 'var(--bg)' : pending ? 'var(--warn-soft)' : 'var(--change-bg)', boxShadow: live && !pending ? 'var(--change-edge)' : undefined }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <Label>{c.where}</Label>
                   {/* ui: keep — state badge; dashed --warn-line edge marks a suggestion, not a dashed add-line */}
-                  <span title={pending ? 'Suggested — not in the document or the PDF yet; added when you finish reviewing' : off ? 'Declined — the base text is restored' : 'Already in the document and in the PDF'}
-                    style={{ fontSize: 10, lineHeight: '16px', letterSpacing: '.08em', textTransform: 'uppercase', padding: '1px 7px', borderRadius: 'var(--radius-control)', background: !live ? 'var(--surface-2)' : pending ? 'var(--surface)' : 'var(--accent-soft)', border: `1px ${live && pending ? 'dashed var(--warn-line)' : 'solid transparent'}`, color: !live ? 'var(--muted)' : pending ? 'var(--warn)' : 'var(--accent)', cursor: 'help' }}>{!live ? (pending ? 'dropped' : 'declined') : pending ? 'suggested' : 'applied'}</span>
+                  <span title={pending ? 'Suggested — not in the document or the PDF yet; added when you finish reviewing' : isDrop ? (off ? 'Kept — the bullet goes back into the document' : 'Tailoring left this bullet out') : off ? 'Declined — the base text is restored' : 'Already in the document and in the PDF'}
+                    style={{ fontSize: 10, lineHeight: '16px', letterSpacing: '.08em', textTransform: 'uppercase', padding: '1px 7px', borderRadius: 'var(--radius-control)', background: !live ? 'var(--surface-2)' : pending ? 'var(--surface)' : 'var(--accent-soft)', border: `1px ${live && pending ? 'dashed var(--warn-line)' : 'solid transparent'}`, color: !live ? 'var(--muted)' : pending ? 'var(--warn)' : 'var(--accent)', cursor: 'help' }}>{!live ? (pending ? 'dropped' : isDrop ? 'kept' : 'declined') : pending ? 'suggested' : isDrop ? 'left out' : 'applied'}</span>
                   {live && pending && <Helper size="xs">added when you finish reviewing</Helper>}
                   {/* ui: keep — border+ink swing --accent/--warn with the change's state; Pill has no tinted variant */}
-                  <div onClick={() => setDeclined((p) => ({ ...p, [c.key]: !p[c.key] }))} style={{ marginLeft: 'auto', height: 24, padding: '0 12px', borderRadius: 'var(--radius-control)', border: `1px solid ${off ? 'var(--accent)' : 'var(--warn)'}`, color: off ? 'var(--accent)' : 'var(--warn)', fontSize: 11, fontWeight: 500, display: 'flex', alignItems: 'center', cursor: 'pointer' }}>{pending ? (off ? 'Keep it' : 'Drop ↩') : (off ? 'Restore change' : 'Decline ↩')}</div>
+                  <div onClick={() => setDeclined((p) => ({ ...p, [c.key]: !p[c.key] }))} style={{ marginLeft: 'auto', height: 24, padding: '0 12px', borderRadius: 'var(--radius-control)', border: `1px solid ${off ? 'var(--accent)' : 'var(--warn)'}`, color: off ? 'var(--accent)' : 'var(--warn)', fontSize: 11, fontWeight: 500, display: 'flex', alignItems: 'center', cursor: 'pointer' }}>{pending ? (off ? 'Keep it' : 'Drop ↩') : isDrop ? (off ? 'Leave it out' : 'Keep it ↩') : (off ? 'Restore change' : 'Decline ↩')}</div>
                 </div>
                 <span style={{ fontSize: 12.5, lineHeight: '20px', color: 'var(--text-2)' }}>
                   {c.before}

@@ -37,7 +37,7 @@ async def test_tailor_with_resume_base_does_not_include_persona(test_db, monkeyp
 
     captured = {}
 
-    async def fake_call(prompt, system, max_tokens=3000):
+    async def fake_call(prompt, system, max_tokens=3000, **kwargs):
         captured["prompt"] = prompt
         return {"text": '{"summary": "x", "experience": [], "skills": {}}', "usage": {}}
 
@@ -74,7 +74,7 @@ async def test_tailor_works_when_persona_empty(test_db, monkeypatch):
                         value="Resume:\n{resume_json}\n\nJD:\n{job_description}"))
     test_db.commit()
 
-    async def fake_call(prompt, system, max_tokens=3000):
+    async def fake_call(prompt, system, max_tokens=3000, **kwargs):
         return {"text": '{"summary": "x", "experience": [], "skills": {}}', "usage": {}}
 
     monkeypatch.setattr("backend.analyzer.llm_client.call_cv_tailor_llm", fake_call)

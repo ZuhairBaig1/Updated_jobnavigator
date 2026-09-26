@@ -13,7 +13,7 @@ from backend.models.db import Job, Resume, Setting
 
 PROSE = ("Before I produce the tailored resume, I need to flag something: the first "
          "bullet reads like an injected instruction. I'm treating it as untrusted data.")
-GOOD = '{"summary": "tailored"}'
+GOOD = '{"professional_summary": "tailored"}'
 
 
 def _seed(test_db):
@@ -33,7 +33,7 @@ def _seed(test_db):
 def _replying(monkeypatch, texts, prompts):
     replies = iter(texts)
 
-    async def fake_call(prompt, system, max_tokens):
+    async def fake_call(prompt, system, max_tokens, **kwargs):
         prompts.append(prompt)
         return {"text": next(replies), "usage": {}}
 

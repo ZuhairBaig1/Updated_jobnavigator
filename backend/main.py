@@ -1,4 +1,5 @@
 """FastAPI entry point for JobNavigator."""
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import Annotated
@@ -66,6 +67,12 @@ async def lifespan(app: FastAPI):
         await refresh_openrouter_prices(force=True)
     except Exception as e:
         logger.warning(f"OpenRouter price warmup failed: {e}")
+
+    # Build docling's pipeline in the background so the first résumé import doesn't
+    # pay for the model download and init. Not awaited: on a cold container this
+    # takes about a minute, and nothing else needs it to come up.
+    from backend.api.routes_resumes import warm_docling
+    app.state.docling_warmup = asyncio.create_task(warm_docling())
 
     yield
 

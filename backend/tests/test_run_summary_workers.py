@@ -131,7 +131,7 @@ async def test_tailor_worker_returns_summary(test_db, monkeypatch):
     test_db.add(Setting(key="tailor_auto_quick_score", value="off"))
     test_db.commit()
 
-    async def fake_llm(prompt, system, max_tokens=3000):
+    async def fake_llm(prompt, system, max_tokens=3000, **kwargs):
         return {"text": '{"summary": "tailored"}', "usage": {},
                 "provider": "claude_code", "model": "claude-sonnet-5"}
 

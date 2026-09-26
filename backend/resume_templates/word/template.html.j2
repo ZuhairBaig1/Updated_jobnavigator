@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{ header.name }} — Resume</title>
+<title>{{ header.name }} -- Resume</title>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;600;700&family=Lato:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Carlito:ital,wght@0,400;0,700;1,400;1,700&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -14,17 +14,18 @@
   margin: 0;
 }
 
+/* Carlito is metric-compatible with Calibri, so this reads as a Word document
+   wherever it is opened. */
 html, body {
-  font-family: 'Lato', 'Helvetica Neue', Arial, sans-serif;
-  font-size: 9.5pt;
-  line-height: 1.2;
-  color: #2d2d2d;
+  font-family: 'Carlito', 'Calibri', 'Lato', 'Helvetica Neue', Arial, sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.28;
+  color: #000;
   background: #fff;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  /* No ligatures or contextual alternates: those glyphs carry no Unicode mapping, so
-     a PDF reader extracts "workflows" as "work\x00ows" and "(RAG)" as "\x00RAG)", and a
-     resume parser sees broken words. Separate glyphs cost nothing here and always extract. */
+  /* No ligatures: Carlito's "ti" ligature carries no Unicode mapping, so a PDF
+     reader extracts "production" as "produc\x00on" and a résumé parser sees two
+     broken words. Separate glyphs cost nothing here and always extract. */
   font-variant-ligatures: none;
   font-feature-settings: "liga" 0, "clig" 0, "calt" 0, "dlig" 0, "hlig" 0;
   text-rendering: optimizeSpeed;
@@ -32,178 +33,103 @@ html, body {
 
 .page {
   width: {{ '8.5in' if page_format == 'letter' else '210mm' }};
-  padding: 0.5in 0.55in;
+  padding: 0.6in 0.75in;   /* Word's default-ish margins */
   margin: 0 auto;
 }
 
-/* R4-T3-01: the trailing whitespace of the flow (the page block's bottom padding
-   and the last entry's bottom margin) is counted against the final line at a page
-   break, pushing it onto a near-blank second page. None of it paints, so drop it
-   when paginating; the HTML preview keeps its bottom gutter. */
 @media print {
   .page { padding-bottom: 0; }
-  .entry:last-child, .edu-entry:last-child, .skill-line:last-child { margin-bottom: 0; }
+  .entry:last-child, .edu-entry:last-child { margin-bottom: 0; }
   .section-title { break-after: avoid; }
+  .entry-head { break-after: avoid; }
 }
 
-/* --- Header --- */
-.header { margin-bottom: 14pt; }
+/* --- Header: centred, as a Word résumé prints it --- */
+.header { text-align: center; margin-bottom: 11pt; }
 
 .header h1 {
-  font-family: 'Raleway', sans-serif;
-  font-size: 22pt;
-  font-weight: 300;
+  font-size: 19pt;
+  font-weight: 700;
+  /* No tracking anywhere in this template: letter-spacing makes a PDF's text
+     layer extract as "N A M E", which résumé parsers read as separate words. */
   letter-spacing: normal;
-  text-transform: uppercase;
-  color: #222;
-  margin-bottom: 5pt;
+  line-height: 1.1;
+  margin-bottom: 2pt;
 }
 
 .header .title-line {
-  font-family: 'Raleway', sans-serif;
-  font-size: 10pt;
-  letter-spacing: 1px;
-  color: #444;
-  margin-bottom: 5pt;
+  font-size: 11pt;
+  font-weight: 700;
+  margin-bottom: 3pt;
 }
 
 .header .contact {
-  font-size: 8.5pt;
-  color: #666;
-  letter-spacing: 0.5px;
-  line-height: 1.5;
+  font-size: 10pt;
+  line-height: 1.35;
 }
 
-.header .contact a { color: #666; text-decoration: none; }
+.header .contact a { color: #000; text-decoration: none; }
+.header .contact .sep { padding: 0 4pt; }
 
-.header .contact .sep { margin: 0 5pt; color: #bbb; }
-
-/* --- Section --- */
-.section { margin-top: 13pt; }
+/* --- Sections: bold heading over a rule, the Word house style --- */
+.section { margin-top: 11pt; }
 
 .section-title {
-  font-family: 'Raleway', sans-serif;
-  font-size: 9.5pt;
-  font-weight: 600;
+  font-size: 11pt;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: normal;
-  color: #444;
-  border-bottom: 0.5px solid #ccc;
-  padding-bottom: 3pt;
-  margin: 8pt 0 3pt 0;
+  border-bottom: 1px solid #000;
+  padding-bottom: 1pt;
+  margin-bottom: 5pt;
 }
 
-/* --- Summary --- */
-.summary-text {
-  font-size: 9.5pt;
-  line-height: 1.2;
-  color: #2d2d2d;
-}
+.summary-text { font-size: 10.5pt; line-height: 1.3; }
 
-/* --- Experience / Projects / Publications --- */
-.entry { margin-bottom: 5pt; }
+/* --- Entries --- */
+.entry { margin-bottom: 8pt; }
 
-.entry-row {
+.entry-head {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
+  gap: 12pt;
+  /* Roomy lines keep a right-hand date from being grouped with the line under it
+     when a parser reconstructs lines from the text layer. */
+  line-height: 1.4;
 }
 
-.entry-company {
-  font-family: 'Raleway', sans-serif;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  color: #222;
-}
+.entry-primary { font-weight: 700; }
+.entry-secondary { font-style: italic; }
+.entry-date, .entry-location { white-space: nowrap; }
 
-.entry-date {
-  color: #666;
-  text-align: right;
-  white-space: nowrap;
-  margin-left: 8pt;
-  font-size: 9pt;
-}
+.entry-description { font-style: italic; margin-bottom: 1pt; }
 
-.entry-title { color: #333; }
-.entry-location {
-  color: #777;
-  font-style: italic;
-  text-align: right;
-  white-space: nowrap;
-  margin-left: 8pt;
-  font-size: 9pt;
-}
+.entry-url a { color: #000; text-decoration: none; }
 
-.entry-description {
-  color: #555;
-  font-style: italic;
-  margin-top: 2pt;
-  font-size: 9pt;
-}
-
-.entry-url {
-  font-size: 8.5pt;
-  color: #666;
-  margin-top: 1pt;
-}
-.entry-url a { color: #666; text-decoration: none; }
-
-ul.bullets {
-  list-style: disc;
-  margin-left: 16pt;
-  margin-top: 3pt;
-}
+/* Bullets are written into the markup as real "•" characters (see below), so
+   list-style stays off: a CSS marker is drawn, not typed, and never lands in
+   the text layer a résumé parser reads. */
+ul.bullets { list-style: none; margin: 2pt 0 0 0; }
 
 ul.bullets li {
-  margin-bottom: 1.5pt;
-  font-size: 9.5pt;
-  line-height: 1.2;
-  color: #2d2d2d;
+  display: flex;
+  gap: 6pt;
+  margin-bottom: 2pt;
+  line-height: 1.3;
 }
+
+ul.bullets li .mark { flex: 0 0 auto; }
 
 /* --- Skills --- */
-.skill-line { margin-bottom: 2pt; line-height: 1.2; }
-.skill-label {
-  font-family: 'Raleway', sans-serif;
-  font-weight: 600;
-  letter-spacing: 0.3px;
-  color: #333;
-}
+.skill-line { margin-bottom: 2pt; line-height: 1.3; }
+.skill-label { font-weight: 700; }
 
 /* --- Education --- */
-.edu-entry { margin-bottom: 5pt; }
-
-.edu-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-}
-
-.edu-school {
-  font-family: 'Raleway', sans-serif;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  color: #222;
-}
-
-.edu-location {
-  color: #777;
-  font-style: italic;
-  text-align: right;
-  white-space: nowrap;
-  margin-left: 8pt;
-  font-size: 9pt;
-}
-
-.edu-degree { color: #444; margin-left: 16pt; font-size: 9pt; }
-
-/* --- Project / Publication name --- */
-.entry-name {
-  font-family: 'Raleway', sans-serif;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  color: #222;
-}
+.edu-entry { margin-bottom: 6pt; }
+.edu-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12pt; line-height: 1.4; }
+.edu-school { font-weight: 700; }
+.edu-degree { line-height: 1.3; }
 /* Each contact item is unbreakable: the line may wrap between items, never inside
    one. Without this the browser wraps at any space -- including the ones inside
    "+91 78421 32657" and "Hyderabad, Telangana, India" -- and a resume parser reads
@@ -217,11 +143,9 @@ ul.bullets li {
 <body>
 <div class="page">
 
-  <!-- Header -->
   {% if header %}
   <div class="header">
     <h1>{{ header.name }}</h1>
-    {# R3-B-01: optional headline. Absent when empty, so nothing shifts. #}
     {% if header.title %}<div class="title-line">{{ header.title }}</div>{% endif %}
     <div class="contact">
       {% set contact_parts = [] %}
@@ -233,12 +157,12 @@ ul.bullets li {
           {% set _ = contact_parts.append('<span class="ci">' ~ item.text ~ '</span>') %}
         {% endif %}
       {% endfor %}
-      {{ contact_parts | join('<span class="sep">&middot;</span><wbr>') }}
+      {# A typed "|" separator, not a CSS one, so the contact line extracts whole. #}
+      {{ contact_parts | join('<span class="sep">|</span><wbr>') }}
     </div>
   </div>
   {% endif %}
 
-  <!-- Summary -->
   {% if summary %}
   <div class="section">
     <div class="section-title">{{ 'Professional Summary' if ats_layout else 'Summary' }}</div>
@@ -246,7 +170,6 @@ ul.bullets li {
   </div>
   {% endif %}
 
-  <!-- Skills -->
   {# Skills render once, placed by layout: after Experience by default, before it in a
      tailored copy's ATS layout (Header, Professional Summary, Technical Skills, Work
      Experience, Projects, Education, Certifications). #}
@@ -254,26 +177,31 @@ ul.bullets li {
   {% if skills %}
   <div class="section">
     <div class="section-title">{{ 'Technical Skills' if ats_layout else 'Skills' }}</div>
-    {% for label, value in skills.items() %}
-    <div class="skill-line"><span class="skill-label">{{ label }}:</span> {{ value | nb }}</div>
-    {% endfor %}
+    {% if skills is mapping %}
+      {% for label, value in skills.items() %}
+      <div class="skill-line"><span class="skill-label">{{ label }}:</span> {{ value | nb }}</div>
+      {% endfor %}
+    {% else %}
+      {% for sk in skills %}
+      <div class="skill-line"><span class="skill-label">{{ sk.category }}:</span> {{ sk.items | nb }}</div>
+      {% endfor %}
+    {% endif %}
   </div>
   {% endif %}
   {% endset %}
   {% if ats_layout %}{{ skills_section }}{% endif %}
 
-  <!-- Experience -->
   {% if experience %}
   <div class="section">
     <div class="section-title">{{ 'Work Experience' if ats_layout else 'Experience' }}</div>
     {% for job in experience %}
     <div class="entry">
-      <div class="entry-row">
-        <span class="entry-company">{{ job.company }}</span>
+      <div class="entry-head">
+        <span class="entry-primary">{{ job.title }}</span>
         <span class="entry-date">{{ job.date }}</span>
       </div>
-      <div class="entry-row">
-        <span class="entry-title">{{ job.title }}</span>
+      <div class="entry-head">
+        <span class="entry-secondary">{{ job.company }}</span>
         <span class="entry-location">{{ job.location }}</span>
       </div>
       {% if job.description %}
@@ -282,7 +210,7 @@ ul.bullets li {
       {% if job.bullets %}
       <ul class="bullets">
         {% for bullet in job.bullets %}
-        <li>{{ bullet | bold }}</li>
+        <li><span class="mark">&bull;</span><span>{{ bullet | bold }}</span></li>
         {% endfor %}
       </ul>
       {% endif %}
@@ -291,7 +219,6 @@ ul.bullets li {
   </div>
   {% endif %}
 
-  <!-- Projects -->
   {# Projects render once, placed by layout: after Education by default, right after
      Work Experience in a tailored copy's ATS layout. #}
   {% set projects_section %}
@@ -300,17 +227,13 @@ ul.bullets li {
     <div class="section-title">Projects</div>
     {% for project in projects %}
     <div class="entry">
-      <div class="entry-name">{{ project.name or project.title }}</div>
-      {% if project.url %}
-      <div class="entry-url"><a href="{{ project.url }}">{{ project.url }}</a></div>
-      {% endif %}
-      {% if project.description %}
-      <div class="entry-description">{{ project.description | nb }}</div>
-      {% endif %}
+      <div class="entry-head"><span class="entry-primary">{{ project.name or project.title }}</span></div>
+      {% if project.description %}<div class="entry-description">{{ project.description | nb }}</div>{% endif %}
+      {% if project.url %}<div class="entry-url"><a href="{{ project.url }}">{{ project.url }}</a></div>{% endif %}
       {% if project.bullets %}
       <ul class="bullets">
         {% for bullet in project.bullets %}
-        <li>{{ bullet | bold }}</li>
+        <li><span class="mark">&bull;</span><span>{{ bullet | bold }}</span></li>
         {% endfor %}
       </ul>
       {% endif %}
@@ -323,15 +246,14 @@ ul.bullets li {
 
   {% if not ats_layout %}{{ skills_section }}{% endif %}
 
-  <!-- Education -->
   {% if education %}
   <div class="section">
     <div class="section-title">Education</div>
     {% for edu in education %}
     <div class="edu-entry">
-      <div class="edu-row">
+      <div class="edu-head">
         <span class="edu-school">{{ edu.school }}</span>
-        {% if not ats_layout %}<span class="edu-location">{{ edu.location }}</span>{% endif %}
+        {% if not ats_layout %}<span class="entry-location">{{ edu.location }}</span>{% endif %}
       </div>
       {# The graduation date prints on the degree line, never in a right-hand column: a
          parser ties a date to the text nearest it, and one a column away reads as the
@@ -343,32 +265,30 @@ ul.bullets li {
   </div>
   {% endif %}
 
-  <!-- Certifications -->
   {% if certifications %}
   <div class="section">
     <div class="section-title">Certifications</div>
     <ul class="bullets">
-      {% for cert in certifications %}<li>{{ cert | bold }}</li>{% endfor %}
+      {% for cert in certifications %}
+      <li><span class="mark">&bull;</span><span>{{ cert | bold }}</span></li>
+      {% endfor %}
     </ul>
   </div>
   {% endif %}
 
   {% if not ats_layout %}{{ projects_section }}{% endif %}
 
-  <!-- Publications -->
   {% if publications %}
   <div class="section">
     <div class="section-title">Publications</div>
     {% for pub in publications %}
     <div class="entry">
-      <div class="entry-name">{{ pub.name or pub.title }}</div>
-      {% if pub.description %}
-      <div class="entry-description">{{ pub.description }}</div>
-      {% endif %}
+      <div class="entry-head"><span class="entry-primary">{{ pub.name or pub.title }}</span></div>
+      {% if pub.description %}<div class="entry-description">{{ pub.description }}</div>{% endif %}
       {% if pub.bullets %}
       <ul class="bullets">
         {% for bullet in pub.bullets %}
-        <li>{{ bullet | bold }}</li>
+        <li><span class="mark">&bull;</span><span>{{ bullet | bold }}</span></li>
         {% endfor %}
       </ul>
       {% endif %}

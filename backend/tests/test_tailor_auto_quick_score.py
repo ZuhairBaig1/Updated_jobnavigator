@@ -26,7 +26,7 @@ async def test_auto_score_launches_when_setting_is_true(test_db, monkeypatch):
     test_db.add(base)
     test_db.commit()
 
-    async def fake_call(prompt, system, max_tokens):
+    async def fake_call(prompt, system, max_tokens, **kwargs):
         return {"text": '{"summary":"tailored"}', "usage": {}}
     monkeypatch.setattr("backend.analyzer.llm_client.call_cv_tailor_llm", fake_call)
 
@@ -59,7 +59,7 @@ async def test_auto_score_skipped_when_setting_is_false(test_db, monkeypatch):
     test_db.add(base)
     test_db.commit()
 
-    async def fake_call(prompt, system, max_tokens):
+    async def fake_call(prompt, system, max_tokens, **kwargs):
         return {"text": '{"summary":"tailored"}', "usage": {}}
     monkeypatch.setattr("backend.analyzer.llm_client.call_cv_tailor_llm", fake_call)
 

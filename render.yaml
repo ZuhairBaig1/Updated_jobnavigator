@@ -1,0 +1,38 @@
+# Render blueprint: the JobNavigator backend plus its database.
+#
+# Render reads this from the repository root. Point a Blueprint at the repo and it
+# creates both services; everything else is set once in the dashboard.
+#
+# The plans below are the smallest that actually work. `starter` rather than `free`
+# is deliberate: the image carries Chromium for PDF export, and a free instance
+# (512 MB, spun down after 15 minutes of no traffic) both struggles to hold it and
+# stops the scheduler from ever firing. Free is fine for trying the API out; it is
+# not fine for the scheduled scraping.
+services:
+  - type: web
+    name: jobnavigator-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile.render
+    dockerContext: .
+    plan: starter
+    healthCheckPath: /api/resumes/templates
+    envVars:
+      # Render injects the connection string from the database below.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: jobnavigator-db
+          property: connectionString
+      # The dashboard password, used on the very first boot to seed the API key.
+      # Generated once by Render; read it from the dashboard and give the same value
+      # to the Streamlit app as API_KEY. Without it the API is open to anyone.
+      - key: INITIAL_API_KEY
+        generateValue: true
+      # Playwright's browsers are installed into the image at build time.
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: /root/.cache/ms-playwright
+
+databases:
+  - name: jobnavigator-db
+    databaseName: jobnavigator
+    user: jobnavigator
+    plan: basic-256mb

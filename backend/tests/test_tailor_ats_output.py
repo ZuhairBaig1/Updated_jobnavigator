@@ -17,26 +17,26 @@ KB_SECTIONS = ["header", "professional_summary", "technical_skills", "work_exper
 
 BASE = {
     "header": {
-        "name": "Shah Ahsan Ali",
+        "name": "Jordan Lee",
         "title": "Senior Data Engineer",
         "contact_items": [
             {"text": "Nashville, TN"},
-            {"text": "shah@example.com", "url": "mailto:shah@example.com"},
-            {"text": "+1 401-206-0657"},
+            {"text": "jordan@example.com", "url": "mailto:jordan@example.com"},
+            {"text": "+1 555-010-0100"},
             {"text": "U.S. Citizen"},
-            {"text": "LinkedIn", "url": "https://linkedin.com/in/shah", "stub": "l"},
+            {"text": "LinkedIn", "url": "https://linkedin.com/in/jordanlee", "stub": "l"},
         ],
     },
     "summary": "8+ years of experience building data platforms.",
     "skills": {"ETL / ELT": "Azure Data Factory, Adobe Airflow",
                "Certifications": "AWS Certified Data Engineer"},
     "experience": [
-        {"company": "Matrix Medical Network", "title": "Senior Data Engineer",
+        {"company": "Acme Health Systems", "title": "Senior Data Engineer",
          "location": "Nashville, TN", "date": "Oct 2024 - Present",
          "start": "2024-10", "end": "", "current": True, "description": "",
          "bullets": ["Engineered Databricks notebooks, improving processing efficiency by 45%.",
                      "Organised the team offsite."]},
-        {"company": "SS&C Technologies", "title": "Data Engineer", "location": "Windsor, CT",
+        {"company": "Northbridge Financial", "title": "Data Engineer", "location": "Windsor, CT",
          "date": "12/2022 - 9/2024", "start": "2022-12", "end": "2024-09", "current": False,
          "description": "", "bullets": ["Built ADF pipelines for financial data."]},
     ],
@@ -48,16 +48,16 @@ BASE = {
 }
 
 REPLY = {
-    "header": {"name": "Shah Ali", "location": "Nashville, TN", "email": "other@example.com",
+    "header": {"name": "Jordan Lee", "location": "Nashville, TN", "email": "other@example.com",
                "phone": "", "work_authorization": "US Citizen", "github": "github.com/invented",
-               "linkedin": "https://linkedin.com/in/shah"},
+               "linkedin": "https://linkedin.com/in/jordanlee"},
     "professional_summary": "Accomplished Senior Data Engineer with 8+ years of experience.",
     "technical_skills": [{"category": "ETL/ELT", "skills": "Azure Data Factory, Apache Airflow"}],
     # Reordered, and with a title the model "improved" — neither may move bullets across roles.
     "work_experience": [
-        {"job_title": "Data Engineer", "company": "SS&C Technologies", "location": "", "dates": "",
+        {"job_title": "Data Engineer", "company": "Northbridge Financial", "location": "", "dates": "",
          "bullets": ["Built Azure Data Factory pipelines for financial transactions."]},
-        {"job_title": "Lead Data Engineer", "company": "Matrix Medical Network", "location": "",
+        {"job_title": "Lead Data Engineer", "company": "Acme Health Systems", "location": "",
          "dates": "", "bullets": ["Engineered Azure Databricks notebooks, improving processing efficiency by 45%."]},
     ],
     # The base project comes back reworded; an invented one must not.
@@ -131,9 +131,9 @@ def test_a_reply_without_projects_keeps_the_base_projects():
 
 def test_bullets_follow_their_own_role_even_when_the_reply_reorders_roles():
     exp = build_tailored_resume(REPLY, BASE)["experience"]
-    assert exp[0]["company"] == "Matrix Medical Network"
+    assert exp[0]["company"] == "Acme Health Systems"
     assert exp[0]["bullets"] == ["Engineered Azure Databricks notebooks, improving processing efficiency by 45%."]
-    assert exp[1]["company"] == "SS&C Technologies"
+    assert exp[1]["company"] == "Northbridge Financial"
     assert exp[1]["bullets"] == ["Built Azure Data Factory pipelines for financial transactions."]
 
 
@@ -156,7 +156,7 @@ def test_a_single_date_prints_alone_as_the_end_date():
     base = {**BASE, "experience": [{**BASE["experience"][0],
                                     "start": "", "end": "2025-06", "current": False}]}
     reply = {**REPLY, "work_experience": [{"job_title": "Senior Data Engineer",
-                                           "company": "Matrix Medical Network", "location": "",
+                                           "company": "Acme Health Systems", "location": "",
                                            "dates": "", "bullets": ["kept"]}]}
     assert build_tailored_resume(reply, base, "")["experience"][0]["date"] == "Jun 2025"
 
@@ -183,11 +183,11 @@ def test_a_role_the_reply_skipped_keeps_its_base_bullets():
 
 def test_header_is_the_base_items_in_kb_order_and_nothing_invented():
     header = build_tailored_resume(REPLY, BASE)["header"]
-    assert header["name"] == "Shah Ahsan Ali"
+    assert header["name"] == "Jordan Lee"
     assert header["title"] == "Senior Data Engineer"   # the base's headline, kept
     texts = [i["text"] for i in header["contact_items"]]
     # Location leads, then email, phone, work authorization and the profile links.
-    assert texts == ["Nashville, TN", "shah@example.com", "+1 401-206-0657", "U.S. Citizen", "LinkedIn"]
+    assert texts == ["Nashville, TN", "jordan@example.com", "+1 555-010-0100", "U.S. Citizen", "LinkedIn"]
     assert header["contact_items"][-1]["stub"] == "l"          # tracer stub survives
     assert not any("github" in json.dumps(i) for i in header["contact_items"])
 
@@ -197,7 +197,7 @@ def test_location_is_the_base_item_and_never_the_postings_city():
     moved = build_tailored_resume({**REPLY, "header": {**REPLY["header"], "location": "Austin, TX"}}, BASE)
     texts = [i["text"] for i in moved["header"]["contact_items"]]
     assert "Austin, TX" not in texts
-    assert texts[0] == "shah@example.com"        # no grounded location, so none prints
+    assert texts[0] == "jordan@example.com"        # no grounded location, so none prints
 
     # A base that split the location out of its contact line still prints it.
     split = {**BASE, "header": {**BASE["header"],
@@ -314,7 +314,7 @@ def test_technology_names_are_spelled_the_way_a_posting_spells_them():
 def test_a_link_inside_prose_is_never_recased():
     """"github.com/foo/fastapi-demo" is an address; recasing it stops it resolving."""
     from backend.analyzer.resume_schema import canonicalize_tech as c
-    for link in ("github.com/ZuhairBaig1",
+    for link in ("github.com/jordanlee",
                  "Published at github.com/foo/fastapi-demo",
                  "Contact fast.api@example.com."):
         assert c(link) == link, link
@@ -328,12 +328,12 @@ def test_a_link_inside_prose_is_never_recased():
 def test_builders_spell_technology_names_canonically():
     reply = {"professional_summary": "Engineer using Fast API.",
              "technical_skills": [{"category": "Backend", "skills": "Fast API, SQL Alchemy"}],
-             "work_experience": [{"job_title": "Data Engineer", "company": "SS&C Technologies",
+             "work_experience": [{"job_title": "Data Engineer", "company": "Northbridge Financial",
                                   "location": "", "dates": "", "start": "", "end": "",
                                   "current": False,
                                   "bullets": ["Built services with Fast API and Py Test."]}],
              "projects": [], "education": [], "certifications": [],
-             "header": {"name": "Shah", "title": "", "location": "", "email": "", "phone": "",
+             "header": {"name": "Jordan", "title": "", "location": "", "email": "", "phone": "",
                         "work_authorization": "", "github": "", "linkedin": ""}}
     base = build_base_resume(reply)
     assert base["summary"] == "Engineer using FastAPI."
@@ -591,7 +591,7 @@ def test_every_template_prints_a_tailored_copy_in_kb_order(name):
     from backend.api.routes_resumes import _render_html
     html = _render_html(build_tailored_resume(REPLY, BASE), name, "letter")
     text = " ".join(re.sub(r"<[^>]+>", " ", html.split("<body>", 1)[1]).split())
-    marks = ["Shah Ahsan Ali", "Professional Summary", "Technical Skills", "Work Experience",
+    marks = ["Jordan Lee", "Professional Summary", "Technical Skills", "Work Experience",
              "Projects", "Education", "Certifications"]
     at = [text.find(m) for m in marks]
     assert -1 not in at and at == sorted(at), dict(zip(marks, at))

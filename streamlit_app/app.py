@@ -45,8 +45,12 @@ st.session_state.setdefault("flash", None)
 st.session_state.setdefault("timings", {})
 # Seeded once from secrets/env. The widgets below own these keys afterwards, so they
 # are set here rather than passed as `value=`, which Streamlit warns about on rerun.
+# api_key is deliberately left blank here rather than seeded from the secret — the sidebar
+# field is only a manual override, and pre-filling it would let anyone viewing the app
+# reveal the real backend key through the password field's show icon. api._headers()
+# falls back to the secret itself when this field is empty.
 st.session_state.setdefault("api_base_url", api.base_url())
-st.session_state.setdefault("api_key", api._secret("API_KEY"))
+st.session_state.setdefault("api_key", "")
 
 
 @st.cache_data(show_spinner=False, max_entries=32)
@@ -169,7 +173,8 @@ with st.sidebar:
     st.text_input("API base URL", key="api_base_url",
                   help="Where the FastAPI backend is running.")
     st.text_input("API key", key="api_key", type="password",
-                  help="Only needed once a dashboard password is set in Settings.")
+                  help="Leave blank to use the key from secrets. Only type one here to "
+                       "override it for this session.")
     if st.button("Refresh", use_container_width=True):
         st.rerun()
 

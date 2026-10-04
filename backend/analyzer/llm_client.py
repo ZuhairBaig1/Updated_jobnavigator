@@ -526,13 +526,29 @@ async def _claude_supports_json_schema() -> bool:
     return _CLAUDE_JSON_SCHEMA
 
 
+# Switch off Claude Code's agent features so a call behaves like a plain model request:
+# no tools, no settings files or CLAUDE.md, no MCP servers, no skills, no saved session.
+# `--bare` does all of this in one flag but refuses the subscription login.
+CLAUDE_CODE_PLAIN_MODEL_FLAGS = [
+    "--tools", "",
+    "--setting-sources", "",
+    "--strict-mcp-config",
+    "--disable-slash-commands",
+    "--no-session-persistence",
+]
+
+
 async def _call_claude_code(prompt: str, system: str, model: str, max_tokens: int,
                              response_schema: dict | None = None,
                              reasoning: bool | None = None) -> dict:
-    """Call Claude via claude CLI subprocess. Returns {text, usage}. Caching not supported."""
+    """Call Claude via the claude CLI with its agent features switched off. Returns {text, usage}."""
     import os
     import json as _json
-    cmd = ["claude", "-p", "--output-format", "json"]
+    import tempfile
+
+    # Our system message replaces Claude Code's own long agent system prompt.
+    cmd = ["claude", "-p", "--output-format", "json", *CLAUDE_CODE_PLAIN_MODEL_FLAGS,
+           "--system-prompt", system]
     if model:
         cmd.extend(["--model", model])
 
@@ -540,13 +556,15 @@ async def _call_claude_code(prompt: str, system: str, model: str, max_tokens: in
 
     if response_schema and await _claude_supports_json_schema():
         cmd.extend(["--json-schema", _json.dumps(response_schema)])
-        full_prompt = f"{system}\n\n{prompt}"
+        prompt_text = prompt
     else:
-        full_prompt = f"{system}\n\n{_schema_in_prompt(prompt, response_schema)}"
+        prompt_text = _schema_in_prompt(prompt, response_schema)
 
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
 
-    rc, stdout, stderr = await _run_cli(cmd, full_prompt.encode(), env=env)
+    # An empty folder, so nothing in the backend's working directory is picked up.
+    with tempfile.TemporaryDirectory(prefix="jobnavigator-claude-") as workdir:
+        rc, stdout, stderr = await _run_cli(cmd, prompt_text.encode(), env=env, cwd=workdir)
 
     if rc != 0:
         error = stderr.decode(errors="replace").strip()
@@ -632,9 +650,19 @@ async def _run_cli(cmd: list[str], stdin: bytes, env: dict | None = None, timeou
     return process.returncode, stdout, stderr
 
 
+# Codex features that add tools or agent behaviour a single answer never needs.
+# Names come from `codex features list` on the pinned CLI version in Dockerfile.backend.
+CODEX_FEATURES_TO_DISABLE = (
+    "shell_tool", "unified_exec", "apps", "plugins", "remote_plugin", "multi_agent",
+    "browser_use", "browser_use_external", "computer_use", "image_generation", "view_image",
+    "goals", "hooks", "skill_search", "skill_mcp_dependency_install", "tool_suggest",
+    "sleep_tool", "code_mode_host", "workspace_dependencies", "personality",
+)
+
+
 async def _call_codex_cli(prompt: str, system: str, model: str, max_tokens: int,
                           response_schema: dict | None = None) -> dict:
-    """Call Codex CLI using its existing ChatGPT login; run in an empty read-only workspace."""
+    """Call Codex CLI using its existing ChatGPT login, with its agent features switched off, in an empty read-only workspace."""
     import json as _json
     import os
     import tempfile
@@ -648,8 +676,12 @@ async def _call_codex_cli(prompt: str, system: str, model: str, max_tokens: int,
         if rc != 0:
             raise NonRetryableLLMError(f"Codex CLI is not logged in — {_CODEX_LOGIN_HINT}")
 
-        full_prompt = f"{system}\n\n{prompt}"
         with tempfile.TemporaryDirectory(prefix="jobnavigator-codex-") as workdir:
+            # Our system message replaces Codex's own built-in agent instructions.
+            instructions_path = os.path.join(workdir, "instructions.md")
+            with open(instructions_path, "w", encoding="utf-8") as fh:
+                fh.write(system)
+
             # `--output-schema` constrains the final message the way an API's response_format
             # does, so the schema stops being a request in the prompt that the model may
             # answer around. It takes a path rather than a string, and the ephemeral
@@ -659,21 +691,23 @@ async def _call_codex_cli(prompt: str, system: str, model: str, max_tokens: int,
                 schema_path = os.path.join(workdir, "response_schema.json")
                 with open(schema_path, "w", encoding="utf-8") as fh:
                     _json.dump(response_schema, fh)
-            else:
-                full_prompt = f"{system}\n\n{_schema_in_prompt(prompt, None)}"
+
             cmd = [
                 "codex", "exec", "--ephemeral", "--ignore-user-config", "--ignore-rules",
                 "--skip-git-repo-check", "--sandbox", "read-only", "--color", "never",
                 "-c", "web_search=disabled", "-c", "history.persistence=none",
                 "-c", "check_for_update_on_startup=false",
+                "-c", f"model_instructions_file={_json.dumps(instructions_path)}",
                 "--json", "-C", workdir,
             ]
+            for feature in CODEX_FEATURES_TO_DISABLE:
+                cmd.extend(["--disable", feature])
             if model:
                 cmd.extend(["--model", model])
             if schema_path:
                 cmd.extend(["--output-schema", schema_path])
             cmd.append("-")
-            rc, stdout, stderr = await _run_cli(cmd, full_prompt.encode(), env=env)
+            rc, stdout, stderr = await _run_cli(cmd, prompt.encode(), env=env)
 
     raw = stdout.decode(errors="replace").strip()
     text = ""

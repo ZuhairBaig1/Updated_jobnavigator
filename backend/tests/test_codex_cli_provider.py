@@ -62,7 +62,11 @@ async def test_codex_cli_runs_ephemeral_read_only_and_parses_jsonl(monkeypatch):
     assert args[-1] == "-"
     assert Path(args[args.index("-C") + 1]).name.startswith("jobnavigator-codex-")
     assert "OPENAI_API_KEY" not in kwargs["env"]
-    assert process.input == b"score against the resume\n\njob description"
+    # The system message replaces Codex's built-in instructions; only the prompt goes on stdin.
+    assert process.input == b"job description"
+    assert any(arg.startswith("model_instructions_file=") for arg in args)
+    disabled = {args[i + 1] for i, arg in enumerate(args) if arg == "--disable"}
+    assert set(llm_client.CODEX_FEATURES_TO_DISABLE) <= disabled
     assert result == {
         "text": "matched",
         "usage": {"input_tokens": 81, "output_tokens": 12, "cache_read_tokens": 20, "cache_write_tokens": 0},

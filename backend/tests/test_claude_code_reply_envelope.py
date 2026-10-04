@@ -25,6 +25,33 @@ async def _call():
 
 
 @pytest.mark.asyncio
+async def test_agent_features_are_switched_off_and_the_system_message_replaces_the_default(monkeypatch):
+    calls = []
+
+    async def fake_run_cli(cmd, stdin, env=None, timeout=None, cwd=None):
+        calls.append({"cmd": cmd, "stdin": stdin, "cwd": cwd})
+        return 0, _json.dumps({"result": "ok", "subtype": "success"}).encode(), b""
+
+    monkeypatch.setattr("backend.analyzer.llm_client._run_cli", fake_run_cli)
+    monkeypatch.setattr("backend.analyzer.llm_client._claude_supports_json_schema", _never)
+
+    await _call_claude_code("the prompt", "the system message", "claude-sonnet-5", 3000)
+
+    cmd = calls[0]["cmd"]
+    assert cmd[cmd.index("--tools") + 1] == ""
+    assert cmd[cmd.index("--setting-sources") + 1] == ""
+    for flag in ("--strict-mcp-config", "--disable-slash-commands", "--no-session-persistence"):
+        assert flag in cmd
+    assert cmd[cmd.index("--system-prompt") + 1] == "the system message"
+    assert calls[0]["stdin"] == b"the prompt"
+    assert "jobnavigator-claude-" in calls[0]["cwd"]
+
+
+async def _never():
+    return False
+
+
+@pytest.mark.asyncio
 async def test_a_normal_envelope_yields_its_result(monkeypatch):
     _cli_printing(monkeypatch, {"result": '{"summary": "x"}', "is_error": False,
                                 "subtype": "success"})

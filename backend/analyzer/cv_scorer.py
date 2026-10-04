@@ -324,7 +324,7 @@ async def score_job_sync(job: Job, cv_texts: dict, db=None, depth="light", prelo
 
 
 async def _score_job_inner(job: Job, cv_texts: dict, db=None, depth="light", preloaded_text: str = None) -> dict:
-    """Inner scoring logic (called under the semaphore); returns a dict on success, or None for either an intentional skip (no text/CVs — callers must pre-check before calling) or a transient LLM failure that should be retried next pass."""
+    """Inner scoring logic (called under the semaphore); returns a dict on success, or None for either an intentional skip (no text/CVs — callers must pre-check before calling) or a transient failure that should be retried next pass."""
     job_text = preloaded_text or await _get_job_text(job, db)
     if not job_text:
         logger.warning(f"Job {job.id} has no text (description, cache, or live), skipping scoring")
@@ -334,6 +334,87 @@ async def _score_job_inner(job: Job, cv_texts: dict, db=None, depth="light", pre
         logger.warning("No CVs uploaded, skipping scoring")
         return None
 
+    from backend.analyzer.decision_scorer import LLM_SCORER, ats_scorer
+    scorer = ats_scorer()
+    if scorer == LLM_SCORER:
+        return await _score_with_llm(job, cv_texts, job_text, db, depth)
+
+    if depth == "light":
+        model_result = await _score_with_decision_model(scorer, job, cv_texts, job_text, depth)
+        if model_result:
+            return model_result
+        logger.warning(f"Job {job.id}: {scorer} scoring failed, falling back to the LLM")
+        return await _score_with_llm(job, cv_texts, job_text, db, depth)
+
+    # Full depth: the LLM still writes the report, the decision model sets the score.
+    llm_result, model_result = await asyncio.gather(
+        _score_with_llm(job, cv_texts, job_text, db, depth),
+        _score_with_decision_model(scorer, job, cv_texts, job_text, depth),
+    )
+    return _put_model_scores_on_llm_report(llm_result, model_result)
+
+
+async def _score_with_decision_model(scorer: str, job, cv_texts: dict, job_text: str, depth: str) -> dict | None:
+    """Scores every résumé with the decision model; None if any of them fails."""
+    from backend.analyzer.decision_scorer import score_resume
+
+    started = time.monotonic()
+    names = list(cv_texts)
+    results = await asyncio.gather(
+        *[score_resume(scorer, cv_texts[name], job_text) for name in names],
+        return_exceptions=True,
+    )
+    all_succeeded = all(isinstance(result, dict) for result in results)
+    _log_decision_model_call(scorer, job, depth, results, started, all_succeeded)
+    if not all_succeeded:
+        return None
+
+    scores = {name: result["score"] for name, result in zip(names, results)}
+    breakdowns = {name: result["breakdown"] for name, result in zip(names, results)}
+    best_cv = max(scores, key=scores.get)
+    return {"scores": scores, "best_cv": best_cv, "_breakdowns": breakdowns, "_scored_by": scorer}
+
+
+def _log_decision_model_call(scorer: str, job, depth: str, results: list, started: float, succeeded: bool) -> None:
+    from backend.analyzer.decision_scorer import SCORERS
+
+    usage = {"input_tokens": 0, "output_tokens": 0, "cache_read_tokens": 0, "cache_write_tokens": 0}
+    for result in results:
+        if isinstance(result, dict):
+            usage["input_tokens"] += result["usage"].get("input_tokens", 0)
+            usage["output_tokens"] += result["usage"].get("output_tokens", 0)
+
+    config = SCORERS[scorer]
+    log_llm_call(
+        purpose="score_full" if depth == "full" else "score_light",
+        provider=config["provider_for_call_log"],
+        model=config["model"],
+        usage=usage,
+        duration_ms=int((time.monotonic() - started) * 1000),
+        job_id=getattr(job, "id", None),
+        success=succeeded,
+        error=None if succeeded else f"{config['label']} scoring failed",
+    )
+
+
+def _put_model_scores_on_llm_report(llm_result: dict | None, model_result: dict | None) -> dict | None:
+    """Keeps the LLM's written report but takes the score and breakdown from the decision model."""
+    if model_result is None:
+        return llm_result
+    if llm_result is None:
+        return {"scores": model_result["scores"], "best_cv": model_result["best_cv"]}
+
+    best_cv = model_result["best_cv"]
+    report = dict(llm_result.get("_scoring_report") or {})
+    report["llm_scores"] = llm_result.get("scores")
+    report["llm_breakdown"] = report.get("breakdown")
+    report["breakdown"] = model_result["_breakdowns"][best_cv]
+    report["scored_by"] = model_result["_scored_by"]
+    return {**llm_result, "scores": model_result["scores"], "best_cv": best_cv, "_scoring_report": report}
+
+
+async def _score_with_llm(job, cv_texts: dict, job_text: str, db, depth: str) -> dict | None:
+    """Scores every résumé in one LLM call using the scoring_rubric setting; depth='full' adds the written report."""
     # Read prompts + model from settings (quick DB read, released immediately)
     settings_db = db or SessionLocal()
     try:
@@ -421,6 +502,7 @@ async def _score_job_inner(job: Job, cv_texts: dict, db=None, depth="light", pre
                          "matched_keywords", "missing_keywords", "hard_blockers", "ats_tip"]:
                 if key in result:
                     report[key] = result[key]
+
             if report:
                 return_value = {**result, "_scoring_report": report}
             else:

@@ -33,6 +33,12 @@ def _clean_auth_throttle():
     _reset()
 
 
+@pytest.fixture(autouse=True)
+def _score_with_llm_by_default(monkeypatch):
+    """The ATS score defaults to Jev, a network call; tests stay on the LLM path unless they opt in."""
+    monkeypatch.setattr("backend.analyzer.decision_scorer.ats_scorer", lambda db=None: "llm")
+
+
 # ── Anthropic mock fixtures ───────────────────────────────────────────────
 
 @pytest.fixture

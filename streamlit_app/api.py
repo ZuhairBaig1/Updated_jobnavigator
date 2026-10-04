@@ -178,9 +178,9 @@ def get_pdf(resume_id: str, template: str = "word") -> tuple:
     return r.content, (name or f"{resume_id}.pdf")
 
 
-# The two model line-ups the toggle switches between. Each names both jobs explicitly
+# The model line-ups the toggle switches between. Each names both jobs explicitly
 # rather than leaving one to fall through to the primary: an empty override follows
-# `llm_provider`, which is not necessarily either of these.
+# `llm_provider`, which is not necessarily any of these.
 ENGINES = {
     "OpenRouter": {
         "label": "OpenRouter — flash + gemma",
@@ -200,6 +200,16 @@ ENGINES = {
             "parse_llm_model": "gpt-5.6-luna",
             "cv_tailor_llm_provider": "codex_cli",
             "cv_tailor_llm_model": "gpt-5.6-luna",
+        },
+    },
+    "Claude Code": {
+        "label": "Claude Code — sonnet-5.5",
+        "help": "Both jobs on the Claude Code CLI with your Claude plan, agent features switched off. About 30s per job, and local only — a hosted backend has no claude binary to run and no way to log one in.",
+        "settings": {
+            "parse_llm_provider": "claude_code",
+            "parse_llm_model": "claude-sonnet-5-5",
+            "cv_tailor_llm_provider": "claude_code",
+            "cv_tailor_llm_model": "claude-sonnet-5-5",
         },
     },
 }

@@ -154,7 +154,7 @@ with st.sidebar:
                             "so the React frontend follows too.")
     st.caption(api.ENGINES[_choice]["help"])
     if not _current:
-        st.warning("The backend is on neither preset. Picking one below will set both jobs.",
+        st.warning("The backend is on none of these presets. Picking one below will set both jobs.",
                    icon="⚠️")
     if _choice != _current:
         if st.button(f"Switch to {_choice}", type="primary", use_container_width=True):

@@ -19,6 +19,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+# langextract's Gemini and Google Cloud dependencies are never used; what it does need is in requirements.txt.
+RUN pip install --no-cache-dir --no-deps langextract==1.7.0
 
 # Install Playwright Chromium browser only (skip install-deps since we handled it above)
 RUN playwright install chromium

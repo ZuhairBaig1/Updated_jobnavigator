@@ -19,6 +19,9 @@ database and a copy tailored here shows up there.
   original says how many tailored copies will go with it — the backend cascades.
 - **Tailor to a job description** opens a text box. Paste the posting, press Tailor,
   and the new copy appears under the original when the run finishes (10–30s).
+- **ATS score** sits above the preview. A tailored copy is scored against the posting it was
+  tailored for; an original is scored against a posting you paste. It shows the score, how much
+  of the must-have and preferred lines is covered, and each line with its coverage, gaps first.
 - Every preview renders in **Word Classic**, whatever template the résumé has stored.
 - An **engine toggle** in the sidebar switches both résumé jobs between two line-ups:
   OpenRouter (deepseek-v4.1-flash structures, gemma-4-31b tailors) and Codex

@@ -1606,6 +1606,7 @@ _BASE_RULES = (
     "- Never make up information: no invented metric, skill, tool, experience, employer, title, date, school, degree, certification or contact detail.\n"
     "- You may rephrase or restructure content to make it more ATS-friendly, but it must stay true to the original resume and never turn into something the resume does not state.\n"
     "- Every claim and metric must reflect the original resume. Use only metrics the resume states; if it has none, add none.\n"
+    "- Keep the verb tense the resume uses, bullet by bullet. Work the resume describes as ongoing (\"Creating\", \"Develops\") is never rewritten as finished (\"Created\", \"Developed\"), and finished work is never rewritten as ongoing: the tense says whether the work is still being done.\n"
     "- A bullet may name a tool, technique or keyword only if the original bullet, or the role or project it sits under, already names it; the summary, other roles and other projects don't count.\n"
     "- When the rules below pull against this one, this one wins: a bullet without a keyword always beats a bullet that claims something the resume does not state.\n\n"
     "1. SECTIONS\n"
@@ -1639,7 +1640,7 @@ _BASE_RULES = (
     "- A role's bullets come only from what the resume states under that role. Never build one out of the skills section: a skill listed there says the candidate knows it, never that they used it in this job, and a bullet saying they did is a claim the resume never made. Skills stay in the skills section.\n"
     "- A paragraph that describes the employer itself (what the company does, where its offices are) is not a role and not a bullet: leave it out. Never answer with a second entry for the same role.\n"
     "- Keep every bullet the resume states: this base is the pool a tailored copy is later drawn from, so there is no maximum and nothing is trimmed for length. Merge duplicate and near-duplicate bullets into one.\n"
-    "- Start every bullet with an action verb, such as Designed, Engineered, Built, Developed, Led, Automated, Migrated, Optimized, Reduced or Delivered.\n"
+    "- Start every bullet with an action verb, in the tense the resume itself uses for that bullet.\n"
     "- Formula: action verb + what was built or done + tools/technologies + measurable result (only a result the resume states).\n"
     "- Vague endings without numbers (\"improving efficiency\", \"significantly reducing time\") weaken credibility: use the resume's own number, or end the bullet at what was done.\n"
     "- Remove generic statements.\n"
@@ -1818,7 +1819,7 @@ async def _score_resume_impl(resume_id: str, depth: str):
                 return "Resume disappeared mid-run"
             data = dict(resume.json_data or {})
             entry = {"Tailored": tailored_score, "scored_at": utcnow().isoformat()}
-            if depth == "full" and result.get("_scoring_report"):
+            if result.get("_scoring_report"):
                 report = dict(result["_scoring_report"])
                 report["scored_with"] = "Tailored"
                 entry["report"] = report
@@ -1845,7 +1846,7 @@ async def _score_resume_impl(resume_id: str, depth: str):
                 except (ValueError, TypeError):
                     job.best_cv_score = None
 
-        if depth == "full" and result.get("_scoring_report"):
+        if result.get("_scoring_report"):
             report = result["_scoring_report"]
             report["scored_with"] = "Tailored"
             existing = dict(job.scoring_report or {})
@@ -1860,6 +1861,49 @@ async def _score_resume_impl(resume_id: str, depth: str):
         return f"{job_title} - Tailored {tailored_score}, {depth}"
     finally:
         db.close()
+
+
+# ── ATS score ────────────────────────────────────────────────────────────────
+
+ATS_SCORER = "jev"
+
+
+def _resume_text_and_its_job_description(resume_id: str) -> tuple:
+    """The résumé as plain text and the job description saved with it ("" when it has none)."""
+    db = SessionLocal()
+    try:
+        resume = db.query(Resume).filter(Resume.id == resume_id).first()
+        if not resume:
+            raise HTTPException(status_code=404, detail="Resume not found")
+        saved_job_description = _tailor_context_jd(resume.json_data or {})
+        if not saved_job_description and resume.job_id:
+            job = db.query(Job).filter(Job.id == resume.job_id).first()
+            saved_job_description = ((job.description or job.cached_page_text or "") if job else "").strip()
+        return _resume_to_score_text(resume.json_data or {}), saved_job_description
+    finally:
+        db.close()
+
+
+@router.post("/{resume_id}/ats-score")
+async def ats_score_of_a_resume(resume_id: str, request_body: dict = None):
+    """The ATS score of one résumé against a job description, with the requirement lines behind it.
+
+    The job description comes from the request ({"job_description": "..."}); without one, the description
+    the copy was tailored for is used. The reply is what line_match.ats_score returns.
+    """
+    from backend.analyzer import line_match
+
+    resume_text, saved_job_description = _resume_text_and_its_job_description(resume_id)
+    job_description = str((request_body or {}).get("job_description") or "").strip() or saved_job_description
+    if not job_description:
+        raise HTTPException(status_code=400, detail="Paste a job description to score this resume against")
+    if len(resume_text) < 50:
+        raise HTTPException(status_code=400, detail="Resume has insufficient text for scoring")
+
+    result = await line_match.ats_score(ATS_SCORER, resume_text, job_description)
+    if result is None:
+        raise HTTPException(status_code=502, detail="The scoring model could not be reached. Try again.")
+    return result
 
 
 @router.post("/{resume_id}/score-check", status_code=202)

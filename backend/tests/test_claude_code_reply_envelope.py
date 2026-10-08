@@ -52,6 +52,28 @@ async def _never():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("model, reasoning, thinking_off", [
+    ("claude-haiku-4-5", False, True),
+    ("claude-haiku-4-5", True, False),
+    ("claude-sonnet-5-5", False, False),
+])
+async def test_haiku_thinking_is_switched_off_only_for_low_effort_calls(monkeypatch, model, reasoning, thinking_off):
+    environments = []
+
+    async def fake_run_cli(cmd, stdin, env=None, timeout=None, cwd=None):
+        environments.append(env)
+        return 0, _json.dumps({"result": "ok", "subtype": "success"}).encode(), b""
+
+    monkeypatch.delenv("MAX_THINKING_TOKENS", raising=False)
+    monkeypatch.setattr("backend.analyzer.llm_client._run_cli", fake_run_cli)
+    monkeypatch.setattr("backend.analyzer.llm_client._claude_supports_json_schema", _never)
+
+    await _call_claude_code("the prompt", "the system message", model, 3000, reasoning=reasoning)
+
+    assert (environments[0].get("MAX_THINKING_TOKENS") == "0") is thinking_off
+
+
+@pytest.mark.asyncio
 async def test_a_normal_envelope_yields_its_result(monkeypatch):
     _cli_printing(monkeypatch, {"result": '{"summary": "x"}', "is_error": False,
                                 "subtype": "success"})

@@ -43,6 +43,8 @@ st.session_state.setdefault("flash", None)
 # describes this run rather than the résumé: the same copy regenerated on another engine
 # takes a different time.
 st.session_state.setdefault("timings", {})
+# resume id -> the ATS score last worked out for it in this session.
+st.session_state.setdefault("ats_scores", {})
 # Seeded once from secrets/env. The widgets below own these keys afterwards, so they
 # are set here rather than passed as `value=`, which Streamlit warns about on rerun.
 # api_key is deliberately left blank here rather than seeded from the secret — the sidebar
@@ -134,6 +136,60 @@ def _copy_label(copy: dict) -> str:
         return " — ".join(p for p in (company, role) if p)
     stamp = (copy.get("updated_at") or "").replace("T", " ")[:16]
     return f"Tailored · {stamp}" if stamp else "Tailored copy"
+
+
+def _is_a_tailored_copy(resume_id: str) -> bool:
+    return any(resume_id == copy["id"] for base in bases for copy in base.get("copies") or [])
+
+
+def _requirement_rows(lines: list) -> list:
+    """The lines as table rows, the least covered first, so the gaps are at the top."""
+    rows = [{"Requirement": line["line"], "Covered": round(100 * line["covered"]),
+             "Importance (1-4)": line.get("importance")} for line in lines]
+    return sorted(rows, key=lambda row: row["Covered"])
+
+
+def _show_ats_score(score: dict):
+    if score.get("ats_score") is None:
+        st.warning("No must-have or preferred lines were found in this job description, so there is nothing to score.")
+        return
+    total, must_have, preferred, occupation = st.columns(4)
+    total.metric("ATS score", f"{score['ats_score']} / 100")
+    must_have_coverage, preferred_coverage = score.get("must_have_coverage"), score.get("preferred_coverage")
+    must_have.metric("Must-haves covered", "—" if must_have_coverage is None else f"{100 * must_have_coverage:.0f}%")
+    preferred.metric("Preferred covered", "—" if preferred_coverage is None else f"{100 * preferred_coverage:.0f}%")
+    occupation.metric("Same occupation", f"{100 * score['same_occupation']:.0f}%")
+    st.caption("Score = (80% must-haves + 20% preferred) × same occupation. "
+               "More important lines count for more. Least covered lines are listed first.")
+    for title, lines in (("Must-have lines", score.get("must_have")), ("Preferred lines", score.get("preferred"))):
+        if lines:
+            st.markdown(f"**{title}**")
+            st.dataframe(_requirement_rows(lines), hide_index=True, use_container_width=True,
+                         column_config={"Covered": st.column_config.ProgressColumn(
+                             "Covered", format="%d%%", min_value=0, max_value=100)})
+
+
+def _ats_score_panel(resume_id: str):
+    """Work out and show the ATS score of the résumé on screen."""
+    is_a_copy = _is_a_tailored_copy(resume_id)
+    with st.expander("ATS score", expanded=resume_id in st.session_state.ats_scores):
+        if is_a_copy:
+            st.caption("Scored against the job description this copy was tailored for.")
+            job_description = ""
+        else:
+            job_description = st.text_area("Job description to score against", height=160,
+                                           key=f"ats-jd-{resume_id}", placeholder="Paste the full posting here…")
+        if st.button("Calculate ATS score", key=f"ats-go-{resume_id}", type="primary"):
+            if not is_a_copy and not job_description.strip():
+                st.warning("Paste a job description first.")
+            else:
+                with st.spinner("Scoring…"):
+                    try:
+                        st.session_state.ats_scores[resume_id] = api.get_ats_score(resume_id, job_description.strip())
+                    except api.BackendError as e:
+                        st.error(str(e))
+        if resume_id in st.session_state.ats_scores:
+            _show_ats_score(st.session_state.ats_scores[resume_id])
 
 
 # ── sidebar: where the backend is ───────────────────────────────────────────────
@@ -381,6 +437,8 @@ with right:
             dl.download_button("⬇ Download PDF", data=pdf, file_name=filename,
                                mime="application/pdf", use_container_width=True,
                                type="primary", key=f"dl-{selected}")
+
+        _ats_score_panel(selected)
 
         try:
             html = api.get_preview_html(selected, PREVIEW_TEMPLATE)

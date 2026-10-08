@@ -19,6 +19,7 @@ _TAILOR_RULES = (
     "- Never make up information: no invented metric, skill, tool, experience, employer, title, date, certification or contact detail.\n"
     "- You may alter wording to match the job description more closely, but it must stay true to the original resume and never turn into something the resume does not state.\n"
     "- Every claim and metric must reflect the original resume. Use only metrics the resume states; if it has none, add none.\n"
+    "- Keep the verb tense the resume uses, bullet by bullet. Work the resume describes as ongoing (\"Creating\", \"Develops\") is never rewritten as finished (\"Created\", \"Developed\"), and finished work is never rewritten as ongoing: the tense says whether the work is still being done.\n"
     "- A bullet may name a tool, technique or keyword only if the original bullet, or the role or project it sits under, already names it. The technical skills list does not count, and neither does the summary, another role or another project.\n"
     "- The skills list says what the candidate knows, never where they used it. \"DHCP\" sitting under \"Cisco IOS Configuration\" does not make \"Configured DHCP\" true of any particular employer: that is a claim the resume never made, and the candidate has to defend it in the interview. Skills stay in the skills section.\n"
     "- Read a bullet for what the candidate did, not for the words it contains. A technology can appear as a property of the thing they worked on rather than as something they can do. \"Configured Jenkins jobs for Java-based retail applications\" says they built the build pipeline; Java is the language the application was written in, by its developers. That is not a Java skill, and \"Java\" does not belong in the skills list however plainly the posting asks for it. The same goes for \"deployed the React front end\", \"supported a .NET application\" and \"migrated a COBOL system\". The tell is grammatical: the technology is modifying a noun (\"a Java-based application\", \"a Python service\") instead of naming what the candidate used.\n"
@@ -61,7 +62,7 @@ _TAILOR_RULES = (
     "- Rewrite every bullet you keep: the same facts, in the JD's vocabulary, leading with what the posting asks for. Returning a bullet word for word as it arrived counts as work not done, unless it already uses the posting's own terms for everything it describes.\n"
     "- Rewriting changes wording only. The facts, tools, numbers, scope and outcome stay exactly what the original bullet stated.\n"
     "- Bullets only, never paragraphs: turn a role's description into bullets. No \"Responsibilities:\" label.\n"
-    "- Start every bullet with an action verb, such as Designed, Engineered, Built, Developed, Led, Automated, Migrated, Optimized, Reduced or Delivered.\n"
+    "- Start every bullet with an action verb, in the tense the resume itself uses for that bullet.\n"
     "- Formula: action verb + what was built or done + tools/JD keywords + measurable result (only a result the resume states).\n"
     "- Vague endings without numbers (\"improving efficiency\", \"significantly reducing time\") weaken credibility: use the resume's own number, or end the bullet at what was done.\n"
     "- Remove generic statements.\n"
@@ -135,6 +136,12 @@ DEFAULT_SETTINGS = {
     "scoring_llm_provider": ("", "Resume scoring provider override (empty = use Primary)"),
     "scoring_llm_model": ("", "Resume scoring model override (empty = use Primary)"),
     "scoring_llm_api_key": ("", "API key for the scoring provider override"),
+    "jd_extract_llm_provider": ("", "LLM provider that extracts a job posting's requirements (empty = use primary llm_provider)"),
+    "jd_extract_llm_model": ("", "LLM model that extracts a job posting's requirements (empty = use primary llm_model)"),
+    "jd_extract_llm_api_key": ("", "API key for the job-requirements extraction provider"),
+    "jd_extract_method": ("schema", "How job requirements are extracted: schema (one call that fills a fixed form) or langextract (LangExtract, which locates each item in the posting)"),
+    "ats_scorer_job_context": ("posting", "What the ATS scoring model reads about the job: posting (the raw posting text), sections (the posting is split by patterns, with no model involved, and each question reads only the parts it is about) or requirements (the posting's extracted requirements, see jd_extract_*)"),
+    "ats_scorer_question_set": ("five_questions", "What the ATS scoring model is asked: five_questions (keywords, domain, impact, experience, requirements) or per_requirement (one graded question for every must-have, nice-to-have, certification and responsibility the posting states, plus years, education and work authorization; needs jd_extract_*)"),
     "ats_scorer": ("jev", "Who produces the ATS fit score: jev (TypeSafe, via OpenRouter), glide (Fastino, needs FASTINO_API_KEY) or llm (the scoring_rubric prompt). Full-depth scoring still uses the LLM to write the report; falls back to the LLM if the decision model fails."),
     "parse_llm_provider": ("", "LLM provider for résumé PDF import (empty = use primary llm_provider)"),
     "parse_llm_model": ("", "LLM model for résumé PDF import (empty = use primary llm_model)"),
@@ -493,6 +500,10 @@ ENUM_SETTING_VALUES = {
     "autofill_llm_provider": _LLM_PROVIDERS,
     "scoring_default_depth": _DEPTHS,
     "ats_scorer": {"jev", "glide", "llm"},
+    "ats_scorer_job_context": {"requirements", "posting", "sections"},
+    "ats_scorer_question_set": {"five_questions", "per_requirement"},
+    "jd_extract_llm_provider": _LLM_PROVIDERS,
+    "jd_extract_method": {"schema", "langextract"},
     "on_save_action": {"off"} | _DEPTHS,
     "tailor_auto_quick_score": {"off", "false", "no", "0", "true", "yes", "1", ""} | _DEPTHS,
     "tracer_links_url_style": {"path", "param", "path_jobid", "param_jobid"},
@@ -743,6 +754,7 @@ def run_migrations(db):
         "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS best_cv_score FLOAT",
         "CREATE INDEX IF NOT EXISTS ix_jobs_best_cv_score ON jobs(best_cv_score)",
         "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS cache_error TEXT",
+        "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS requirements JSON",
         # cv_scores is declared Column(JSON), so create_all() builds it as native
         # `json` on a fresh DB and as `jsonb` on DBs predating that change. The
         # jsonb_* functions have no `json` overload, so every reference is cast

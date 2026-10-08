@@ -354,14 +354,32 @@ async def _score_job_inner(job: Job, cv_texts: dict, db=None, depth="light", pre
     return _put_model_scores_on_llm_report(llm_result, model_result)
 
 
+async def _requirements_for_scoring(job, job_text: str) -> dict | None:
+    """The posting's extracted requirements, or None to have the model read the raw posting instead."""
+    from backend.analyzer.decision_scorer import uses_extracted_requirements, uses_per_requirement_questions
+    from backend.analyzer.job_requirements import requirements_for_job
+
+    try:
+        if not (uses_extracted_requirements() or uses_per_requirement_questions()):
+            return None
+        requirements = await requirements_for_job(getattr(job, "id", None), job_text)
+    except Exception as error:
+        logger.warning(f"Job {getattr(job, 'id', None)}: could not extract requirements "
+                       f"({type(error).__name__}: {error}); scoring against the raw posting")
+        return None
+
+    found_any = requirements and (requirements["must_have"] or requirements["nice_to_have"])
+    return requirements if found_any else None
+
+
 async def _score_with_decision_model(scorer: str, job, cv_texts: dict, job_text: str, depth: str) -> dict | None:
     """Scores every résumé with the decision model; None if any of them fails."""
-    from backend.analyzer.decision_scorer import score_resume
-
+    requirements = await _requirements_for_scoring(job, job_text)
+    sections = await _sections_for_scoring(job, job_text)
     started = time.monotonic()
     names = list(cv_texts)
     results = await asyncio.gather(
-        *[score_resume(scorer, cv_texts[name], job_text) for name in names],
+        *[_score_one_resume(scorer, cv_texts[name], job_text, requirements, sections) for name in names],
         return_exceptions=True,
     )
     all_succeeded = all(isinstance(result, dict) for result in results)
@@ -372,7 +390,66 @@ async def _score_with_decision_model(scorer: str, job, cv_texts: dict, job_text:
     scores = {name: result["score"] for name, result in zip(names, results)}
     breakdowns = {name: result["breakdown"] for name, result in zip(names, results)}
     best_cv = max(scores, key=scores.get)
-    return {"scores": scores, "best_cv": best_cv, "_breakdowns": breakdowns, "_scored_by": scorer}
+    judged_match = await _judged_match_for(scorer, cv_texts[best_cv], job_text, job)
+    report = {"breakdown": breakdowns[best_cv], "scored_by": scorer, **_keywords_for(cv_texts[best_cv], job_text, job),
+              **judged_match}
+    return {"scores": scores, "best_cv": best_cv, "_breakdowns": breakdowns, "_scored_by": scorer,
+            "_scoring_report": report}
+
+
+async def _judged_match_for(scorer: str, resume_text: str, job_text: str, job) -> dict:
+    """The match score with the model judging each keyword; empty when it fails, which leaves the counted score in place."""
+    from backend.analyzer.judged_match import judged_match_score
+
+    try:
+        return await judged_match_score(scorer, resume_text, job_text, getattr(job, "title", "") or "") or {}
+    except Exception as error:
+        logger.warning(f"Judged keyword match failed ({type(error).__name__}: {error})")
+        return {}
+
+
+def _keywords_for(resume_text: str, job_text: str, job) -> dict:
+    """The tools the résumé names and misses, and the keyword match score; empty when the lookup fails, which never fails a score."""
+    from backend.analyzer.keyword_match import keyword_match
+    from backend.analyzer.match_score import match_score
+
+    try:
+        return {**keyword_match(resume_text, job_text),
+                **match_score(resume_text, job_text, getattr(job, "title", "") or "")}
+    except Exception as error:
+        logger.warning(f"Keyword match failed ({type(error).__name__}: {error})")
+        return {}
+
+
+async def _sections_for_scoring(job, job_text: str) -> dict | None:
+    """The posting split into sections when each question reads only its own part, else None."""
+    from backend.analyzer.decision_scorer import uses_posting_sections
+    from backend.analyzer.job_sections import split_posting
+
+    try:
+        if not uses_posting_sections():
+            return None
+        return split_posting(job_text)
+    except Exception as error:
+        logger.warning(f"Job {getattr(job, 'id', None)}: could not split the posting "
+                       f"({type(error).__name__}: {error}); scoring against the whole posting")
+        return None
+
+
+async def _score_one_resume(scorer: str, resume_text: str, job_text: str, requirements: dict | None,
+                            sections: dict | None = None) -> dict | None:
+    """Picks how the model is asked: per requirement, per posting section, or the whole posting at once."""
+    from backend.analyzer import decision_scorer
+
+    if requirements and decision_scorer.uses_per_requirement_questions():
+        result = await decision_scorer.score_resume_by_requirement(scorer, resume_text, requirements)
+        if result is not None:
+            return result
+    if sections:
+        result = await decision_scorer.score_resume_by_posting_section(scorer, resume_text, job_text, sections)
+        if result is not None:
+            return result
+    return await decision_scorer.score_resume(scorer, resume_text, job_text, requirements)
 
 
 def _log_decision_model_call(scorer: str, job, depth: str, results: list, started: float, succeeded: bool) -> None:
@@ -408,6 +485,8 @@ def _put_model_scores_on_llm_report(llm_result: dict | None, model_result: dict 
     report = dict(llm_result.get("_scoring_report") or {})
     report["llm_scores"] = llm_result.get("scores")
     report["llm_breakdown"] = report.get("breakdown")
+    # The breakdown and the keyword lists come from the decision model's side, not from the LLM's guess.
+    report.update(model_result.get("_scoring_report") or {})
     report["breakdown"] = model_result["_breakdowns"][best_cv]
     report["scored_by"] = model_result["_scored_by"]
     return {**llm_result, "scores": model_result["scores"], "best_cv": best_cv, "_scoring_report": report}

@@ -561,6 +561,10 @@ async def _call_claude_code(prompt: str, system: str, model: str, max_tokens: in
         prompt_text = _schema_in_prompt(prompt, response_schema)
 
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+    if reasoning is False and "haiku" in (model or "").lower():
+        # `--effort low` does not stop Haiku thinking: measured ~7,500 thinking tokens and
+        # ~2 minutes per job posting, against ~15 seconds and the same answers with it off.
+        env["MAX_THINKING_TOKENS"] = "0"
 
     # An empty folder, so nothing in the backend's working directory is picked up.
     with tempfile.TemporaryDirectory(prefix="jobnavigator-claude-") as workdir:

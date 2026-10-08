@@ -192,6 +192,7 @@ class Job(Base):
     best_cv_score = Column(Float, nullable=True, index=True)
     best_cv = Column(String, nullable=True)
     scoring_report = Column(JSON, nullable=True)  # Structured report: summary, keywords, requirement mapping
+    requirements = Column(JSON, nullable=True)    # The posting's extracted requirements (job_requirements.py)
     # deferred: avg 16 KB / 7 KB per row — list queries were hydrating both just to
     # compute one boolean. Use `has_cached_page` (SQL expression) for that instead.
     cached_page_html = deferred(Column(Text, nullable=True))

@@ -1549,6 +1549,7 @@ export default function V2JobFeed() {
                                   <Helper>{(rpt.matched_keywords || []).length} matched · {(rpt.missing_keywords || []).length} missing</Helper>
                                   {(rpt.matched_keywords || []).length > 0 && <Link onClick={() => setShowMatched((v) => !v)}>{showMatched ? 'Hide matched' : 'Show matched'}</Link>}
                                 </div>
+                                {rpt.match_score != null && <Helper>Keyword match score {rpt.match_score}{Object.entries(rpt.match_breakdown || {}).map(([part, points]) => ` · ${part} ${points}/${rpt.match_out_of?.[part] ?? '?'}`).join('')}</Helper>}
                                 {/* ui: keep — mono keyword tags (Tag role), not controls */}
                                 {showMatched && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, paddingTop: 2 }}>{(rpt.matched_keywords || []).map((w, k) => <span key={k} style={{ fontFamily: 'var(--mono)', fontSize: 10.5, padding: '3px 7px', borderRadius: 'var(--radius-control)', background: 'var(--accent-soft)', color: 'var(--good)' }}>{w}</span>)}</div>}
                                 {/* ui: keep — mono keyword tags (Tag role), not controls */}

@@ -25,6 +25,8 @@ PREVIEW_TIMEOUT = 60
 # Importing a PDF is not a background run: the endpoint extracts the text and waits on the
 # LLM that structures it before replying, so this one request carries the whole wait.
 IMPORT_TIMEOUT = 300
+# The score is worked out while the request waits: a few seconds, longer for a long posting.
+ATS_SCORE_TIMEOUT = 180
 # A PDF is rendered by headless Chromium on demand, so it is slower than an HTML preview.
 PDF_TIMEOUT = 180
 PDF_MAX_BYTES = 10 * 1024 * 1024        # the backend's own ceiling, checked here for a better message
@@ -108,6 +110,26 @@ def start_tailoring(base_resume_id: str, job_description: str) -> str:
     if not run_id:
         raise BackendError(f"The backend accepted the request but returned no run id: {r.text[:200]}")
     return run_id
+
+
+def get_ats_score(resume_id: str, job_description: str = "") -> dict:
+    """The ATS score of one résumé, with the requirement lines behind it.
+
+    With no job description, the backend scores a tailored copy against the one it was tailored for.
+    """
+    try:
+        r = requests.post(f"{base_url()}/api/resumes/{resume_id}/ats-score", headers=_headers(),
+                          json={"job_description": job_description}, timeout=ATS_SCORE_TIMEOUT)
+    except requests.RequestException as e:
+        raise BackendError(f"Could not reach the backend at {base_url()}: {e}") from e
+    if not r.ok:
+        detail = r.text[:300]
+        try:
+            detail = r.json().get("detail", detail)
+        except Exception:
+            pass
+        raise BackendError(f"Could not score this résumé ({r.status_code}): {detail}")
+    return r.json()
 
 
 def get_run(run_id: str) -> dict:

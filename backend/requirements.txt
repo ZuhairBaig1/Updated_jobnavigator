@@ -37,4 +37,11 @@ linkedin-api @ git+https://github.com/vesaias/linkedin-api@988dc61d4b83f1138109c
 Jinja2>=3.1.0
 pytest==9.0.3
 pytest-asyncio==1.3.0
+# What langextract needs at runtime. langextract itself is installed with --no-deps in
+# Dockerfile.backend, skipping its Gemini and Google Cloud packages, which this app never calls.
+absl-py
+more-itertools
+pandas
+tqdm
+regex
 docling

@@ -87,6 +87,14 @@ def _render_document(html: str, height: int = 1150):
     st.iframe(f"data:text/html;base64,{encoded}", height=height)
 
 
+def _ids_of_its_tailored_copies(resume_id: str) -> set:
+    """The tailored copies that are deleted along with an original; none for a copy."""
+    for base in bases:
+        if base["id"] == resume_id:
+            return {copy["id"] for copy in base.get("copies") or []}
+    return set()
+
+
 def _confirm_delete_strip(resume_id: str, what: str, also_removes: int = 0):
     """Ask before deleting, and say what else goes with it.
 
@@ -104,11 +112,13 @@ def _confirm_delete_strip(resume_id: str, what: str, also_removes: int = 0):
         except api.BackendError as e:
             st.error(str(e))
         else:
-            gone = {resume_id}
+            gone = {resume_id} | _ids_of_its_tailored_copies(resume_id)
             st.session_state.confirm_delete = None
             if st.session_state.selected in gone:
                 st.session_state.selected = None
             st.session_state.open_copies -= gone
+            for gone_id in gone:
+                st.session_state.ats_scores.pop(gone_id, None)
             n = result.get("children_deleted") or 0
             st.session_state.flash = (f"Deleted {what}"
                                       + (f" and {n} tailored cop{'y' if n == 1 else 'ies'}" if n else "")

@@ -725,3 +725,9 @@ def test_claude_code_turns_that_into_an_effort_level():
     assert '"--effort"' in src, "the flag must always be sent"
     assert "reasoning" in src.split('"--effort"')[1].split("\n")[0], \
         "the level must be derived from `reasoning`, not hardcoded"
+
+
+def test_haiku_starts_unpinned_because_no_default_pin_serves_it():
+    import backend.analyzer.llm_client as L
+
+    assert L.openrouter_ladder("anthropic/claude-haiku-5.5") == (None,)

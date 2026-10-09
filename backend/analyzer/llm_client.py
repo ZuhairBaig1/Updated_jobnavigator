@@ -280,6 +280,8 @@ OPENROUTER_MODEL_LADDERS = {
     "qwen/qwen3-30b-a3b-instruct-2507": (None,),
     "qwen/qwen3.8-27b": (None,),
     "openai/gpt-oss-safeguard-20b": (None,),
+    # Checked 2026-10-09: neither default pin serves Haiku, so it starts unpinned.
+    "anthropic/claude-haiku-5.5": (None,),
 }
 
 

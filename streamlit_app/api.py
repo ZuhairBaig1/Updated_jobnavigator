@@ -214,6 +214,16 @@ ENGINES = {
             "cv_tailor_llm_model": "google/gemma-4-31b-it",
         },
     },
+    "Haiku": {
+        "label": "OpenRouter — Claude Haiku 5.5",
+        "help": "Claude Haiku 5.5 through OpenRouter for both jobs. Works on a hosted backend, since it needs only the OpenRouter key.",
+        "settings": {
+            "parse_llm_provider": "openrouter",
+            "parse_llm_model": "anthropic/claude-haiku-5.5",
+            "cv_tailor_llm_provider": "openrouter",
+            "cv_tailor_llm_model": "anthropic/claude-haiku-5.5",
+        },
+    },
     "Codex": {
         "label": "Codex — gpt-5.6-luna",
         "help": "Both jobs on the Codex CLI with your ChatGPT plan. Slower, and local only — a hosted backend has no codex binary to run and no way to log one in.",

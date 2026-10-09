@@ -23,9 +23,9 @@ database and a copy tailored here shows up there.
   tailored for; an original is scored against a posting you paste. It shows the score, how much
   of the must-have and preferred lines is covered, and each line with its coverage, gaps first.
 - Every preview renders in **Word Classic**, whatever template the résumé has stored.
-- An **engine toggle** in the sidebar switches both résumé jobs between two line-ups:
-  OpenRouter (deepseek-v4.1-flash structures, gemma-4-31b tailors) and Codex
-  (gpt-5.6-luna for both). It writes through `PATCH /api/settings`, the same endpoint the
+- An **engine toggle** in the sidebar switches both résumé jobs between line-ups:
+  OpenRouter (deepseek-v4.1-flash structures, gemma-4-31b tailors), Claude Haiku 5.5 through
+  OpenRouter (both jobs), Codex (gpt-5.6-luna for both) and Claude Code (sonnet-5.5 for both). It writes through `PATCH /api/settings`, the same endpoint the
   React frontend uses, so switching here switches there too.
 - Whatever it just made shows **how long it took** and which engine made it. For tailoring
   that is the backend's own `duration_seconds` rather than wall-clock, so the polling

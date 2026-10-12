@@ -200,7 +200,47 @@ def _show_missing_essentials(score: dict):
                  f"{100 * missing['credit']:.0f}% of that requirement. This takes {100 * missing['cost']:.0f}% off the score.")
 
 
+PARTS_OF_THE_RUBRIC = {"occupation": "Same occupation", "title": "Title match", "core_skills": "Core skills",
+                       "other_skills": "Other skills", "duties": "Duties", "experience": "Experience",
+                       "qualifications": "Qualifications", "evidence": "Evidence in the roles"}
+
+
+def _show_rubric_score(score: dict):
+    """The score from the rubric: the total, what scaled it, the model's pick and reason per question, and the keywords."""
+    total, occupation, core, keywords = st.columns(4)
+    total.metric("ATS score", f"{score['ats_score']} / 100")
+    occupation.metric("Same occupation", f"{100 * score['same_occupation']:.0f}%")
+    core.metric("Core skills kept", f"{100 * score['core_skills_kept']:.0f}%")
+    keyword_share = (score.get("keywords") or {}).get("share")
+    keywords.metric("Keywords matched", "—" if keyword_share is None else f"{100 * keyword_share:.0f}%")
+    st.caption("Score = the parts below added by weight × same occupation × core skills kept. "
+               "The model picks one option per question and says why; the code does the arithmetic.")
+    for missing in score.get("missing") or []:
+        st.error(f"Missing: {missing}")
+    rows = [{"Part": PARTS_OF_THE_RUBRIC.get(row["question"], row["question"]), "Picked": row["meaning"],
+             "Earned": "—" if row["share"] is None else f"{100 * row['share']:.0f}%",
+             "Weight": "scales the total" if row["weight"] is None else f"{100 * row['weight']:.0f}%",
+             "Reason": row["reason"]} for row in score.get("rubric") or []]
+    st.dataframe(rows, hide_index=True, use_container_width=True)
+    core = score.get("core_skills") or {}
+    if core.get("named"):
+        st.markdown("**Core skills** — what the job is mainly about, looked for in the roles")
+        st.caption(f"Shown in a role: {', '.join(core.get('used') or []) or 'none'}")
+        st.caption(f"Not shown in any role: {', '.join(core.get('not_used') or []) or 'none'}")
+    found = score.get("keywords") or {}
+    st.markdown("**Keyword match** — the posting's keywords, looked for word for word")
+    st.caption(f"Used in a role: {', '.join(found.get('used') or []) or 'none'}")
+    st.caption(f"Only listed as a skill: {', '.join(found.get('listed') or []) or 'none'}")
+    st.caption(f"Not in the resume: {', '.join(found.get('missing') or []) or 'none'}")
+    if score.get("input_tokens"):
+        st.caption(f"{score.get('model')}: {score['input_tokens']} tokens in, {score['output_tokens']} out, "
+                   f"${score.get('cost_usd', 0):.4f}")
+
+
 def _show_ats_score(score: dict):
+    if score.get("scorer") == "rubric":
+        _show_rubric_score(score)
+        return
     if score.get("ats_score") is None:
         st.warning("No must-have or preferred lines were found in this job description, so there is nothing to score.")
         return
@@ -233,13 +273,17 @@ def _ats_score_panel(resume_id: str):
         else:
             job_description = st.text_area("Job description to score against", height=160,
                                            key=f"ats-jd-{resume_id}", placeholder="Paste the full posting here…")
+        method = st.radio("Scoring method", list(api.SCORING_METHODS), key=f"ats-method-{resume_id}", horizontal=True,
+                          help="Rubric: one model call and a keyword check, quick and cheap. "
+                               "Line by line: Jev judges every line of the posting, steadier and slower.")
         if st.button("Calculate ATS score", key=f"ats-go-{resume_id}", type="primary"):
             if not is_a_copy and not job_description.strip():
                 st.warning("Paste a job description first.")
             else:
                 with st.spinner("Scoring…"):
                     try:
-                        st.session_state.ats_scores[resume_id] = api.get_ats_score(resume_id, job_description.strip())
+                        st.session_state.ats_scores[resume_id] = api.get_ats_score(
+                            resume_id, job_description.strip(), method)
                     except api.BackendError as e:
                         st.error(str(e))
         if resume_id in st.session_state.ats_scores:

@@ -95,3 +95,30 @@ def test_the_title_lines_under_the_name_are_sent_to_be_matched_against_the_posti
 
     assert reply.status_code == 200, reply.text
     assert asked[0]["title_lines"] == ["Senior DevOps Engineer", "Site Reliability Engineer"]
+
+
+def test_the_rubric_scorer_is_used_when_asked_for_on_the_model_named(api_client, test_db, monkeypatch):
+    from backend.analyzer import rubric_ats_score
+    resume = _saved(test_db, _resume())
+    asked = []
+
+    async def fake_rubric_score(resume_text, job_text, provider, model):
+        asked.append((provider, model, job_text))
+        return {"ats_score": 81, "scorer": "rubric"}
+    monkeypatch.setattr(rubric_ats_score, "ats_score", fake_rubric_score)
+
+    reply = api_client.post(f"/api/resumes/{resume.id}/ats-score",
+                            json={"job_description": "Requirements\n- Kubernetes", "scorer": "rubric", "model": "haiku"})
+
+    assert reply.status_code == 200, reply.text
+    assert reply.json() == {"ats_score": 81, "scorer": "rubric"}
+    assert asked == [("openrouter", "anthropic/claude-haiku-5.5", "Requirements\n- Kubernetes")]
+
+
+def test_a_scoring_model_that_is_not_offered_is_refused(api_client, test_db):
+    resume = _saved(test_db, _resume())
+
+    reply = api_client.post(f"/api/resumes/{resume.id}/ats-score",
+                            json={"job_description": "Requirements\n- Kubernetes", "scorer": "rubric", "model": "gpt"})
+
+    assert reply.status_code == 400

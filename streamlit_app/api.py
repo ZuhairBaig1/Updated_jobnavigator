@@ -112,14 +112,23 @@ def start_tailoring(base_resume_id: str, job_description: str) -> str:
     return run_id
 
 
-def get_ats_score(resume_id: str, job_description: str = "") -> dict:
-    """The ATS score of one résumé, with the requirement lines behind it.
+# The ways of scoring the toggle offers: what the backend is asked for, and what the user is told.
+SCORING_METHODS = {
+    "Rubric — Gemma 4 31B": {"scorer": "rubric", "model": "gemma"},
+    "Rubric — Claude Haiku 5.5": {"scorer": "rubric", "model": "haiku"},
+    "Line by line — Jev": {"scorer": "jev"},
+}
+
+
+def get_ats_score(resume_id: str, job_description: str = "", method: str = "") -> dict:
+    """The ATS score of one résumé, with what is behind it.
 
     With no job description, the backend scores a tailored copy against the one it was tailored for.
     """
     try:
         r = requests.post(f"{base_url()}/api/resumes/{resume_id}/ats-score", headers=_headers(),
-                          json={"job_description": job_description}, timeout=ATS_SCORE_TIMEOUT)
+                          json={"job_description": job_description, **SCORING_METHODS.get(method, {})},
+                          timeout=ATS_SCORE_TIMEOUT)
     except requests.RequestException as e:
         raise BackendError(f"Could not reach the backend at {base_url()}: {e}") from e
     if not r.ok:

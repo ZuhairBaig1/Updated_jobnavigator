@@ -1868,6 +1868,7 @@ async def _score_resume_impl(resume_id: str, depth: str):
 # ── ATS score ────────────────────────────────────────────────────────────────
 
 ATS_SCORER = "jev"
+RUBRIC_SCORER = "rubric"
 
 
 def _resume_text_and_its_job_description(resume_id: str) -> tuple:
@@ -1895,8 +1896,11 @@ async def ats_score_of_a_resume(resume_id: str, request_body: dict = None):
 
     The job description comes from the request ({"job_description": "..."}); without one, the description
     the copy was tailored for is used. The reply is what line_match.ats_score returns.
+
+    {"scorer": "rubric"} scores with one model call and a keyword check instead (rubric_ats_score.ats_score),
+    on the model named by {"model": "gemma" | "haiku"}.
     """
-    from backend.analyzer import line_match
+    from backend.analyzer import line_match, rubric_ats_score
 
     resume_text, title_lines, saved_job_description = _resume_text_and_its_job_description(resume_id)
     job_description = str((request_body or {}).get("job_description") or "").strip() or saved_job_description
@@ -1905,7 +1909,14 @@ async def ats_score_of_a_resume(resume_id: str, request_body: dict = None):
     if len(resume_text) < 50:
         raise HTTPException(status_code=400, detail="Resume has insufficient text for scoring")
 
-    result = await line_match.ats_score(ATS_SCORER, resume_text, job_description, title_lines)
+    if (request_body or {}).get("scorer") == RUBRIC_SCORER:
+        model_name = (request_body or {}).get("model") or rubric_ats_score.GEMMA
+        if model_name not in rubric_ats_score.MODELS:
+            raise HTTPException(status_code=400, detail=f"Unknown scoring model: {model_name}")
+        provider, model = rubric_ats_score.MODELS[model_name]
+        result = await rubric_ats_score.ats_score(resume_text, job_description, provider, model)
+    else:
+        result = await line_match.ats_score(ATS_SCORER, resume_text, job_description, title_lines)
     if result is None:
         raise HTTPException(status_code=502, detail="The scoring model could not be reached. Try again.")
     return result

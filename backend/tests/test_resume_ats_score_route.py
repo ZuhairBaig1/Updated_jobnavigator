@@ -74,7 +74,7 @@ def test_a_scoring_model_that_cannot_be_reached_is_reported(api_client, test_db,
 
     reply = api_client.post(f"/api/resumes/{resume.id}/ats-score", json={"job_description": "Requirements\n- Kubernetes"})
 
-    assert reply.status_code == 502
+    assert reply.status_code == 503
 
 
 def test_a_resume_that_does_not_exist_is_not_found(api_client, test_db, monkeypatch):
@@ -122,3 +122,37 @@ def test_a_scoring_model_that_is_not_offered_is_refused(api_client, test_db):
                             json={"job_description": "Requirements\n- Kubernetes", "scorer": "rubric", "model": "gpt"})
 
     assert reply.status_code == 400
+
+
+def test_an_account_out_of_credit_is_said_in_plain_words(api_client, test_db, monkeypatch):
+    from backend.api import routes_resumes
+    resume = _saved(test_db, _resume())
+    _scores_are(monkeypatch, None)
+
+    async def out_of_credit():
+        return True
+    monkeypatch.setattr(routes_resumes, "_openrouter_is_out_of_credit", out_of_credit)
+
+    reply = api_client.post(f"/api/resumes/{resume.id}/ats-score", json={"job_description": "Requirements\n- Kubernetes"})
+
+    assert reply.status_code == 402
+    assert "out of credit" in reply.json()["detail"]
+
+
+def test_a_failure_on_the_claude_plan_is_never_blamed_on_openrouter_credit(api_client, test_db, monkeypatch):
+    from backend.analyzer import rubric_ats_score
+    from backend.api import routes_resumes
+    resume = _saved(test_db, _resume())
+
+    async def no_score(resume_text, job_text, provider, model):
+        return None
+
+    async def out_of_credit():
+        return True
+    monkeypatch.setattr(rubric_ats_score, "ats_score", no_score)
+    monkeypatch.setattr(routes_resumes, "_openrouter_is_out_of_credit", out_of_credit)
+
+    reply = api_client.post(f"/api/resumes/{resume.id}/ats-score",
+                            json={"job_description": "Requirements\n- Kubernetes", "scorer": "rubric", "model": "haiku_plan"})
+
+    assert reply.status_code == 503

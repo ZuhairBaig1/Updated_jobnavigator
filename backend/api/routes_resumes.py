@@ -1869,6 +1869,12 @@ async def _score_resume_impl(resume_id: str, depth: str):
 
 ATS_SCORER = "jev"
 RUBRIC_SCORER = "rubric"
+OPENROUTER = "openrouter"
+OPENROUTER_CREDITS_URL = "https://openrouter.ai/api/v1/credits"
+OUT_OF_CREDIT_MESSAGE = ("The OpenRouter account is out of credit, so this scoring method cannot run. "
+                         "Add credit at openrouter.ai/settings/credits, or choose the Claude plan scoring method.")
+# Not 502: a proxy in front of the backend replaces a 502 with its own error page, and the message is lost.
+SCORING_MODEL_UNAVAILABLE = 503
 
 
 def _resume_text_and_its_job_description(resume_id: str) -> tuple:
@@ -1909,6 +1915,7 @@ async def ats_score_of_a_resume(resume_id: str, request_body: dict = None):
     if len(resume_text) < 50:
         raise HTTPException(status_code=400, detail="Resume has insufficient text for scoring")
 
+    provider = OPENROUTER
     if (request_body or {}).get("scorer") == RUBRIC_SCORER:
         model_name = (request_body or {}).get("model") or rubric_ats_score.GEMMA
         if model_name not in rubric_ats_score.MODELS:
@@ -1918,8 +1925,24 @@ async def ats_score_of_a_resume(resume_id: str, request_body: dict = None):
     else:
         result = await line_match.ats_score(ATS_SCORER, resume_text, job_description, title_lines)
     if result is None:
-        raise HTTPException(status_code=502, detail="The scoring model could not be reached. Try again.")
+        if provider == OPENROUTER and await _openrouter_is_out_of_credit():
+            raise HTTPException(status_code=402, detail=OUT_OF_CREDIT_MESSAGE)
+        raise HTTPException(status_code=SCORING_MODEL_UNAVAILABLE, detail="The scoring model could not be reached. Try again.")
     return result
+
+
+async def _openrouter_is_out_of_credit() -> bool:
+    """Whether the OpenRouter account the scorers use has nothing left. False when that cannot be found out."""
+    import httpx
+    from backend.analyzer import decision_scorer
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            reply = await client.get(OPENROUTER_CREDITS_URL,
+                                     headers={"Authorization": f"Bearer {decision_scorer._find_api_key(ATS_SCORER)}"})
+        account = reply.json()["data"]
+        return float(account["total_credits"]) - float(account["total_usage"]) <= 0
+    except Exception:
+        return False
 
 
 @router.post("/{resume_id}/score-check", status_code=202)

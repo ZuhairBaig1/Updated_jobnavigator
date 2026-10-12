@@ -15,7 +15,13 @@ import base64
 
 import streamlit as st
 
+import importlib
+
 import api
+
+# After a deploy Streamlit re-runs this script but keeps the modules it had already imported, so a new
+# app.py met an old api.py and failed on a name that file did have. api holds no state, so it is loaded afresh.
+api = importlib.reload(api)
 
 PREVIEW_TEMPLATE = "word"          # "Word Classic": the only look this app shows
 POLL_SECONDS = 2

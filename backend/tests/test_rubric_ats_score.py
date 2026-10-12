@@ -12,6 +12,11 @@ BEST_PICKS = {"occupation": "same", "title": "exact", "core_skills": "all", "oth
               "experience": "meets", "qualifications": "all", "evidence": "strong"}
 
 
+@pytest.fixture(autouse=True)
+def nothing_remembered():
+    rubric._scores_remembered.clear()
+
+
 def _reply(picks=BEST_PICKS, missing=("Datadog",), core=("Kubernetes",)):
     answers = {question: {"reason": f"why {question}", "option": option} for question, option in picks.items()}
     return {"text": json.dumps({"core_skills_named": list(core), **answers, "missing": list(missing)}),
@@ -19,11 +24,13 @@ def _reply(picks=BEST_PICKS, missing=("Datadog",), core=("Kubernetes",)):
             "model": "google/gemma-4-31b-it"}
 
 
-def _model_replies(monkeypatch, reply):
+def _model_replies(monkeypatch, *replies):
+    """The model gives these replies in turn, and the last one again for every call after that."""
     calls = []
 
     async def fake_call_llm(prompt, system, **options):
         calls.append({"prompt": prompt, "system": system, **options})
+        reply = replies[min(len(calls), len(replies)) - 1]
         if isinstance(reply, Exception):
             raise reply
         return reply
@@ -132,12 +139,12 @@ def test_the_prompts_stay_small():
 
 
 @pytest.mark.asyncio
-async def test_one_call_gives_the_score_the_reasons_and_the_cost(monkeypatch):
+async def test_three_calls_give_the_score_the_reasons_and_the_cost(monkeypatch):
     calls = _model_replies(monkeypatch, _reply())
 
     result = await rubric.ats_score(RESUME, POSTING)
 
-    assert len(calls) == 1
+    assert len(calls) == rubric.TIMES_ASKED == 3
     assert (calls[0]["provider"], calls[0]["model"]) == ("openrouter", "google/gemma-4-31b-it")
     assert calls[0]["temperature"] == 0
     assert result["scorer"] == "rubric"
@@ -146,7 +153,7 @@ async def test_one_call_gives_the_score_the_reasons_and_the_cost(monkeypatch):
     assert result["core_skills"] == {"named": ["Kubernetes"], "used": ["Kubernetes"], "not_used": [], "share": 1.0}
     row = result["rubric"][0]
     assert (row["question"], row["option"], row["reason"]) == ("occupation", "same", "why occupation")
-    assert (result["input_tokens"], result["output_tokens"]) == (5000, 300)
+    assert (result["input_tokens"], result["output_tokens"]) == (15000, 900)
 
 
 @pytest.mark.asyncio
@@ -168,3 +175,127 @@ async def test_a_failed_call_or_a_reply_that_is_not_json_gives_no_score(monkeypa
 def test_gemma_and_haiku_are_the_models_a_caller_may_name():
     assert rubric.MODELS == {"gemma": ("openrouter", "google/gemma-4-31b-it"),
                              "haiku": ("openrouter", "anthropic/claude-haiku-5.5")}
+
+
+# ── What keeps the score steady ────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_the_middle_pick_of_the_three_replies_is_the_one_used(monkeypatch):
+    _model_replies(monkeypatch, _reply({**BEST_PICKS, "duties": "all"}), _reply({**BEST_PICKS, "duties": "few"}),
+                   _reply({**BEST_PICKS, "duties": "most"}))
+
+    result = await rubric.ats_score(RESUME, POSTING)
+
+    duties = [row for row in result["rubric"] if row["question"] == "duties"][0]
+    assert duties["option"] == "most"
+    assert duties["share"] == round((1.0 + 0.25 + 0.8) / 3, 2)      # it earns the average of the three picks
+    assert result["times_asked"] == 3
+
+
+@pytest.mark.asyncio
+async def test_a_question_the_model_is_in_two_minds_about_moves_the_score_only_a_little(monkeypatch):
+    """Duties flips between all and most: one flip in three moves the score by a third of that step."""
+    _model_replies(monkeypatch, _reply())
+    all_three = (await rubric.ats_score(RESUME, POSTING))["ats_score"]
+    rubric._scores_remembered.clear()
+    _model_replies(monkeypatch, _reply({**BEST_PICKS, "duties": "most"}), _reply())
+    one_flip = (await rubric.ats_score(RESUME, POSTING))["ats_score"]
+
+    assert 0 <= all_three - one_flip <= 2
+
+
+def test_a_question_most_replies_call_not_asked_is_left_out():
+    def reply(experience):
+        return {question: {"option": experience if question == "experience" else option}
+                for question, option in BEST_PICKS.items()}
+
+    assert rubric._average_shares([reply("not_stated"), reply("not_stated"), reply("meets")])["experience"] is None
+    assert rubric._average_shares([reply("not_stated"), reply("slightly_below"), reply("meets")])["experience"] == 0.8
+
+
+@pytest.mark.asyncio
+async def test_a_reply_that_fails_is_left_out_and_the_others_still_score(monkeypatch):
+    _model_replies(monkeypatch, RuntimeError("busy"), _reply())
+
+    result = await rubric.ats_score(RESUME, POSTING)
+
+    assert result["times_asked"] == 2
+
+
+@pytest.mark.asyncio
+async def test_the_same_resume_and_posting_are_scored_once_and_remembered(monkeypatch):
+    calls = _model_replies(monkeypatch, _reply())
+
+    first = await rubric.ats_score(RESUME, POSTING)
+    second = await rubric.ats_score(RESUME, POSTING)
+
+    assert second == first
+    assert len(calls) == 3
+    await rubric.ats_score(RESUME + " ", POSTING)      # a different résumé is asked about afresh
+    assert len(calls) == 6
+
+
+def test_core_skills_count_when_most_replies_name_them():
+    replies = [{"core_skills_named": ["Kubernetes", "AWS"]}, {"core_skills_named": ["kubernetes", "Docker"]},
+               {"core_skills_named": ["Kubernetes", "AWS", "Terraform"]}]
+
+    assert sorted(rubric._core_skills_most_replies_name(replies), key=str.lower) == ["AWS", "Kubernetes"]
+
+
+# ── The years of work, from the dates ──────────────────────────────────────────
+
+from datetime import date
+
+DATED = ("Jordan\n## Experience\nSenior Engineer at Acme (Jul 2023 – Present\n- Ran clusters in 2019 – 2020 style\n"
+         "Engineer at Beta (Jan 2020 – Jun 2023\nIntern at Beta (Jan 2020 – Jun 2020\n## Skills\nLinux")
+
+
+def test_years_are_added_up_from_the_roles_and_overlaps_count_once():
+    assert rubric.years_of_work(DATED, today=date(2026, 6, 30)) == 6.5      # Jan 2020 to Jun 2026
+
+
+def test_a_resume_with_no_dated_role_gives_no_years():
+    assert rubric.years_of_work(RESUME) is None
+
+
+def test_the_years_a_posting_asks_for_are_its_largest_minimum():
+    assert rubric.years_the_posting_asks_for("5+ years of DevOps. 2 years of Go. Range 10-15 Years overall.") == 10
+    assert rubric.years_the_posting_asks_for("Proven experience in DevOps.") is None
+
+
+def test_the_dates_settle_the_experience_question_when_the_posting_states_years():
+    assert rubric.experience_from_the_dates(DATED, "8+ years of experience")["option"] in ("slightly_below", "far_below")
+    assert rubric.experience_from_the_dates(DATED, "3+ years of experience")["option"] == "meets"
+    assert rubric.experience_from_the_dates(DATED, "Proven experience") is None
+
+
+@pytest.mark.asyncio
+async def test_code_overrules_the_models_experience_pick_when_the_dates_say_otherwise(monkeypatch):
+    _model_replies(monkeypatch, _reply({**BEST_PICKS, "experience": "meets"}))
+
+    result = await rubric.ats_score(DATED, POSTING + "\n- 15+ years of experience")
+
+    experience = [row for row in result["rubric"] if row["question"] == "experience"][0]
+    assert experience["option"] == "far_below"
+    assert "Counted from the dates" in experience["reason"]
+
+
+def test_between_all_and_most_the_count_from_the_roles_decides_the_core_skills():
+    assert rubric._core_skills_share("all", 1.0) == rubric._core_skills_share("most", 1.0) == 1.0
+    assert rubric._core_skills_share("all", 0.5) == 0.5
+
+
+def test_a_pick_of_half_or_less_can_only_lower_the_core_skills():
+    assert rubric._core_skills_share("about_half", 1.0) == 0.5
+    assert rubric._core_skills_share("few", 0.1) == 0.1
+    assert rubric._core_skills_share("few", None) == 0.25
+
+
+@pytest.mark.asyncio
+async def test_one_odd_reply_about_the_occupation_does_not_move_the_score(monkeypatch):
+    _model_replies(monkeypatch, _reply())
+    steady = (await rubric.ats_score(RESUME, POSTING))["ats_score"]
+    rubric._scores_remembered.clear()
+    _model_replies(monkeypatch, _reply({**BEST_PICKS, "occupation": "different"}), _reply())
+
+    assert (await rubric.ats_score(RESUME, POSTING))["ats_score"] == steady

@@ -11,11 +11,23 @@ How it works:
   4. Code turns each pick into a share, adds the parts by weight, and scales the total by whether the
      candidate's career is in this occupation and by how many of the job's core skills they have used.
 
+What keeps it steady:
+  - The model is asked several times at once. Each question earns the average of what its picks stand for,
+    so a question the model is in two minds about moves the score a little, not a whole step; the middle
+    pick is the one shown. Asked once, the same résumé scored 82 one time and 92 the next.
+  - What code can settle, code settles: the keywords, the core skills in the roles, and the years of work,
+    which are added up from the roles' dates and set against the years the posting asks for.
+  - A résumé and posting scored once are remembered, so asking again gives the same score.
+
 This is a third way of scoring. line_match.py asks Jev about every line of the posting, which is steadier
 but takes a dozen calls; this one takes a single call, so it is quick and cheap.
 """
+import asyncio
+import hashlib
 import json
 import logging
+import re
+from datetime import date
 
 from backend.analyzer import keyword_match, line_match
 from backend.analyzer.job_requirements import clean_job_text
@@ -35,6 +47,11 @@ MOST_WORDS_IN_A_REASON = 20
 RESUME_MAX_CHARS = 24_000
 POSTING_MAX_CHARS = 8_000
 MOST_MISSING_REQUIREMENTS = 3
+# How many times the model is asked. The middle pick of an odd number of answers needs no tie-break.
+TIMES_ASKED = 3
+# Changed whenever the rubric, the prompt or the arithmetic changes, so remembered scores are not reused.
+VERSION = "4"
+MOST_SCORES_REMEMBERED = 500
 
 
 # ── The rubric ─────────────────────────────────────────────────────────────────
@@ -48,9 +65,9 @@ KEYWORDS = "keywords"
 
 HOW_MANY = {
     "all": ("All of them", 1.0),
-    "most": ("Most of them", 0.8),
-    "about_half": ("About half of them", 0.5),
-    "few": ("A few of them", 0.25),
+    "most": ("Most: at least three quarters", 0.8),
+    "about_half": ("About half: between a third and three quarters", 0.5),
+    "few": ("A few: less than a third", 0.25),
     "none": ("None of them", 0.0),
 }
 NOT_STATED = {"not_stated": ("The posting does not ask for this", None)}
@@ -192,6 +209,65 @@ def _is_used_in(skill: str, work: str, skills_in_the_work: set) -> bool:
     return bool(known_as & skills_in_the_work) if known_as else line_match._names(work, skill)
 
 
+# ── The years of work, in code ─────────────────────────────────────────────────
+#
+# Each role's line in the résumé text ends with its dates: "DevOps Engineer at Acme (Jun 2018 – Nov 2020".
+# Overlapping roles are counted once. When the posting states a number of years, code answers the experience
+# question; when it does not, the model's pick stands.
+
+MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+A_MONTH_AND_YEAR = r"(?:([A-Za-z]{3})[a-z]*\.?\s+)?((?:19|20)\d{2})"
+DATES_OF_A_ROLE = re.compile(A_MONTH_AND_YEAR + r"\s*[–—-]+\s*(?:(present|current|now|today)|" + A_MONTH_AND_YEAR + ")",
+                             re.IGNORECASE)
+YEARS_THE_POSTING_ASKS = re.compile(r"(\d{1,2})\s*(?:\+|plus)?\s*(?:(?:-|–|to)\s*\d{1,2}\s*\+?\s*)?(?:years?|yrs?)\b",
+                                    re.IGNORECASE)
+MOST_YEARS_A_POSTING_ASKS = 30
+SHARE_OF_THE_YEARS_THAT_IS_SLIGHTLY_BELOW = 0.8
+
+
+def years_of_work(resume_text: str, today: date | None = None):
+    """The years the roles cover, from their dates, each month counted once. None when no role states its dates."""
+    today = today or date.today()
+    months_worked = set()
+    for line in line_match._work_part_of(resume_text).splitlines():
+        if line.lstrip().startswith("-"):
+            continue
+        for start_month, start_year, still_there, end_month, end_year in DATES_OF_A_ROLE.findall(line):
+            first = _month_number(start_year, start_month, 1)
+            last = _month_number(today.year, MONTHS[today.month - 1], 12) if still_there \
+                else _month_number(end_year, end_month, 12)
+            months_worked.update(range(first, last + 1))
+    return round(len(months_worked) / 12, 1) if months_worked else None
+
+
+def _month_number(year, month_name: str, month_when_not_stated: int) -> int:
+    """Months counted from year 0, so a range of them can be walked."""
+    name = (month_name or "").lower()[:3]
+    month = MONTHS.index(name) + 1 if name in MONTHS else month_when_not_stated
+    return int(year) * 12 + month
+
+
+def years_the_posting_asks_for(job_text: str):
+    """The largest number of years the posting states as a minimum, or None when it states none."""
+    years = [int(number) for number in YEARS_THE_POSTING_ASKS.findall(line_match.posting_as_plain_text(job_text))]
+    years = [number for number in years if 0 < number <= MOST_YEARS_A_POSTING_ASKS]
+    return max(years) if years else None
+
+
+def experience_from_the_dates(resume_text: str, job_text: str):
+    """The experience option the dates settle, with the reason in words, or None when they cannot settle it."""
+    worked, asked = years_of_work(resume_text), years_the_posting_asks_for(job_text)
+    if worked is None or asked is None:
+        return None
+    if worked >= asked:
+        option = "meets"
+    elif worked >= SHARE_OF_THE_YEARS_THAT_IS_SLIGHTLY_BELOW * asked:
+        option = "slightly_below"
+    else:
+        option = "far_below"
+    return {OPTION: option, REASON: f"Counted from the dates: {worked:g} years in the roles, {asked} asked for."}
+
+
 # ── What the model reads ───────────────────────────────────────────────────────
 
 SKILLS_SECTION = "skills"
@@ -227,38 +303,137 @@ def _prompt(resume_text: str, job_text: str, keywords: dict) -> str:
 
 # ── Asking the model ───────────────────────────────────────────────────────────
 
+_scores_remembered = {}
+
+
 async def ats_score(resume_text: str, job_text: str, provider: str = PROVIDER, model: str = MODEL) -> dict | None:
-    """The score out of 100 with every part behind it, the model's reasons, and what the call cost.
+    """The score out of 100 with every part behind it, the model's reasons, and what the calls cost.
 
     Returns {"ats_score", "scorer", "model", "same_occupation", "core_skills_kept", "total_of_parts", "parts",
-    "rubric": [rows], "keywords", "core_skills", "missing", "input_tokens", "output_tokens", "cost_usd"}.
-    A rubric row is {"question", "asks", "option", "meaning", "share", "weight", "reason"}.
-    Returns None when the model cannot be asked or its reply is not usable.
+    "rubric": [rows], "keywords", "core_skills", "missing", "times_asked", "input_tokens", "output_tokens",
+    "cost_usd"}. A rubric row is {"question", "asks", "option", "meaning", "share", "weight", "reason"}.
+    Returns None when the model cannot be asked or none of its replies is usable.
     """
+    remembered_as = _key_of(resume_text, job_text, provider, model)
+    if remembered_as in _scores_remembered:
+        return _scores_remembered[remembered_as]
+
     keywords = keyword_check(resume_text, job_text)
-    try:
-        reply = await call_llm(_prompt(resume_text, job_text, keywords), SYSTEM_PROMPT, max_tokens=MOST_REPLY_TOKENS,
-                               provider=provider, model=model, response_schema=_schema_of_the_reply(),
-                               schema_name="ats_rubric", temperature=0)
-    except Exception as error:
-        logger.warning(f"The rubric call failed ({type(error).__name__}: {error})")
+    prompt = _prompt(resume_text, job_text, keywords)
+    replies = await asyncio.gather(*[_one_reply(prompt, provider, model) for _ in range(TIMES_ASKED)])
+    replies = [reply for reply in replies if reply is not None]
+    if not replies:
         return None
 
+    all_answers = [reply["answers"] for reply in replies]
+    answers = _middle_answers(all_answers)
+    shares = _average_shares(all_answers)
+    from_the_dates = experience_from_the_dates(resume_text, job_text)
+    if from_the_dates:
+        answers[EXPERIENCE] = from_the_dates
+        shares[EXPERIENCE] = RUBRIC[EXPERIENCE]["options"][from_the_dates[OPTION]][1]
+    core_skills = core_skill_check(resume_text, _core_skills_most_replies_name(all_answers))
+    shares[OCCUPATION] = RUBRIC[OCCUPATION]["options"][answers[OCCUPATION][OPTION]][1]
+    shares[CORE_SKILLS] = _core_skills_share(answers[CORE_SKILLS][OPTION], core_skills["share"])
+    input_tokens = sum(reply["input_tokens"] for reply in replies)
+    output_tokens = sum(reply["output_tokens"] for reply in replies)
+    score = score_from_shares(shares, keywords["share"], core_skills["share"])
+    result = {**score, "scorer": "rubric", "model": replies[0]["model"] or model,
+              "rubric": _rubric_rows(answers, score["parts"]), "keywords": keywords, "core_skills": core_skills,
+              "missing": [str(item) for item in (answers.get(MISSING) or [])][:MOST_MISSING_REQUIREMENTS],
+              "times_asked": len(replies), "input_tokens": input_tokens, "output_tokens": output_tokens,
+              "cost_usd": calc_cost(provider, model, input_tokens, output_tokens)}
+    _remember(remembered_as, result)
+    return result
+
+
+async def _one_reply(prompt: str, provider: str, model: str) -> dict | None:
+    """One answer to the rubric: {"answers", "model", "input_tokens", "output_tokens"}, or None when it is not usable."""
+    try:
+        reply = await call_llm(prompt, SYSTEM_PROMPT, max_tokens=MOST_REPLY_TOKENS, provider=provider, model=model,
+                               response_schema=_schema_of_the_reply(), schema_name="ats_rubric", temperature=0)
+    except Exception as error:
+        logger.warning(f"A rubric call failed ({type(error).__name__}: {error})")
+        return None
     answers = _answers_in(reply.get("text") or "")
     if answers is None:
-        logger.warning(f"The rubric reply was not usable: {(reply.get('text') or '')[:200]!r}")
+        logger.warning(f"A rubric reply was not usable: {(reply.get('text') or '')[:200]!r}")
         return None
-
-    picks = {question: answers[question][OPTION] for question in RUBRIC}
-    core_skills = core_skill_check(resume_text, answers.get(CORE_SKILLS_NAMED))
     usage = reply.get("usage") or {}
-    input_tokens, output_tokens = usage.get("input_tokens", 0) or 0, usage.get("output_tokens", 0) or 0
-    score = score_from_picks(picks, keywords["share"], core_skills["share"])
-    return {**score, "scorer": "rubric", "model": reply.get("model") or model,
-            "rubric": _rubric_rows(answers, score["parts"]), "keywords": keywords, "core_skills": core_skills,
-            "missing": [str(item) for item in (answers.get(MISSING) or [])][:MOST_MISSING_REQUIREMENTS],
-            "input_tokens": input_tokens, "output_tokens": output_tokens,
-            "cost_usd": calc_cost(provider, model, input_tokens, output_tokens)}
+    return {"answers": answers, "model": reply.get("model"), "input_tokens": usage.get("input_tokens", 0) or 0,
+            "output_tokens": usage.get("output_tokens", 0) or 0}
+
+
+def _middle_answers(all_answers: list) -> dict:
+    """For every question the middle pick of the replies, with the reason of a reply that made that pick.
+
+    The missing requirements come from the reply that agrees with the most middle picks.
+    """
+    middle = {}
+    for question, details in RUBRIC.items():
+        order = list(details["options"])
+        picks = sorted((answers[question][OPTION] for answers in all_answers), key=order.index)
+        pick = picks[(len(picks) - 1) // 2]
+        reason = next(answers[question].get(REASON) for answers in all_answers if answers[question][OPTION] == pick)
+        middle[question] = {OPTION: pick, REASON: str(reason or "")}
+    most_typical = max(all_answers, key=lambda answers: sum(answers[q][OPTION] == middle[q][OPTION] for q in RUBRIC))
+    middle[MISSING] = most_typical.get(MISSING) or []
+    return middle
+
+
+# The two answers that scale the whole score are not averaged: one odd reply out of three would move the
+# score by a quarter. They take the middle pick, which one odd reply cannot move.
+PICKS_THAT_LEAVE_CORE_SKILLS_TO_THE_COUNT = ("all", "most")
+
+
+def _core_skills_share(middle_pick: str, share_the_roles_name):
+    """What the core skills earn: the count from the roles, unless the model sees a real gap the count misses.
+
+    "All" and "most" are a hair apart to the model and six points apart in the score, so between those two
+    the count decides. A pick of half or less is the model saying the roles fall short, and it can only lower.
+    """
+    from_the_pick = HOW_MANY[middle_pick][1]
+    if share_the_roles_name is None:
+        return from_the_pick
+    if middle_pick in PICKS_THAT_LEAVE_CORE_SKILLS_TO_THE_COUNT:
+        return share_the_roles_name
+    return min(from_the_pick, share_the_roles_name)
+
+
+def _average_shares(all_answers: list) -> dict:
+    """For every question, the average of what the replies' picks stand for.
+
+    A question most replies say the posting does not ask about is left out (None); otherwise the replies
+    that did answer it are averaged.
+    """
+    shares = {}
+    for question, details in RUBRIC.items():
+        stated = [details["options"][answers[question][OPTION]][1] for answers in all_answers]
+        answered = [share for share in stated if share is not None]
+        most_say_not_asked = len(answered) <= len(stated) / 2
+        shares[question] = None if most_say_not_asked else sum(answered) / len(answered)
+    return shares
+
+
+def _core_skills_most_replies_name(all_answers: list) -> list:
+    """The core skills more than half of the replies name, in the order first named. All of one reply's, if none."""
+    named_by = {}
+    for answers in all_answers:
+        for skill in {str(skill).strip() for skill in (answers.get(CORE_SKILLS_NAMED) or []) if str(skill).strip()}:
+            named_by.setdefault(skill.lower(), [skill, 0])[1] += 1
+    agreed = [skill for skill, times in named_by.values() if times > len(all_answers) / 2]
+    return agreed or list(all_answers[0].get(CORE_SKILLS_NAMED) or [])
+
+
+def _key_of(resume_text: str, job_text: str, provider: str, model: str) -> str:
+    whole = "\x1f".join((VERSION, provider, model, resume_text or "", job_text or ""))
+    return hashlib.sha256(whole.encode("utf-8")).hexdigest()
+
+
+def _remember(key: str, result: dict) -> None:
+    if len(_scores_remembered) >= MOST_SCORES_REMEMBERED:
+        _scores_remembered.pop(next(iter(_scores_remembered)))
+    _scores_remembered[key] = result
 
 
 def _answers_in(reply_text: str) -> dict | None:
@@ -280,8 +455,9 @@ def _rubric_rows(answers: dict, parts: dict) -> list:
     for question, details in RUBRIC.items():
         option = answers[question][OPTION]
         meaning, share = details["options"][option]
+        earned = parts.get(question, share)
         rows.append({"question": question, "asks": details["asks"], "option": option, "meaning": meaning,
-                     "share": parts.get(question, share), "weight": WEIGHT_OF_PART.get(question),
+                     "share": None if earned is None else round(earned, 2), "weight": WEIGHT_OF_PART.get(question),
                      "reason": str(answers[question].get(REASON) or "")})
     return rows
 
@@ -289,18 +465,24 @@ def _rubric_rows(answers: dict, parts: dict) -> list:
 # ── Scoring, in code ───────────────────────────────────────────────────────────
 
 def score_from_picks(picks: dict, keyword_share, core_skills_used_share=None) -> dict:
-    """The score from the model's picks and the code's checks: parts by weight, then occupation and core skills."""
-    parts = {question: RUBRIC[question]["options"][pick][1] for question, pick in picks.items() if question != OCCUPATION}
+    """The score when every question has one pick."""
+    shares = {question: RUBRIC[question]["options"][pick][1] for question, pick in picks.items()}
+    return score_from_shares(shares, keyword_share, core_skills_used_share)
+
+
+def score_from_shares(shares: dict, keyword_share, core_skills_used_share=None) -> dict:
+    """The score from what each question earned and the code's checks: parts by weight, then occupation and core skills."""
+    parts = {question: share for question, share in shares.items() if question != OCCUPATION}
     parts[KEYWORDS] = keyword_share
     if core_skills_used_share is not None:
         parts[CORE_SKILLS] = min(parts[CORE_SKILLS], core_skills_used_share)
     stated = {part: share for part, share in parts.items() if share is not None}
     weight_in_play = sum(WEIGHT_OF_PART[part] for part in stated)
     total_of_parts = sum(WEIGHT_OF_PART[part] * share for part, share in stated.items()) / weight_in_play
-    same_occupation = RUBRIC[OCCUPATION]["options"][picks[OCCUPATION]][1]
+    same_occupation = shares[OCCUPATION]
     core_skills_kept = _share_kept_for_core_skills(parts[CORE_SKILLS])
     return {"ats_score": round(100 * total_of_parts * same_occupation * core_skills_kept),
-            "same_occupation": same_occupation, "core_skills_kept": round(core_skills_kept, 2),
+            "same_occupation": round(same_occupation, 2), "core_skills_kept": round(core_skills_kept, 2),
             "total_of_parts": round(total_of_parts, 3), "parts": parts}
 
 

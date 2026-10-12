@@ -214,7 +214,8 @@ def _show_rubric_score(score: dict):
     keyword_share = (score.get("keywords") or {}).get("share")
     keywords.metric("Keywords matched", "—" if keyword_share is None else f"{100 * keyword_share:.0f}%")
     st.caption("Score = the parts below added by weight × same occupation × core skills kept. "
-               "The model picks one option per question and says why; the code does the arithmetic.")
+               "The model picks one option per question and says why; the code does the arithmetic. "
+               f"Asked {score.get('times_asked', 1)} times: each part earns the average, and the middle pick is shown.")
     for missing in score.get("missing") or []:
         st.error(f"Missing: {missing}")
     rows = [{"Part": PARTS_OF_THE_RUBRIC.get(row["question"], row["question"]), "Picked": row["meaning"],

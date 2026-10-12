@@ -130,3 +130,37 @@ async def list_models(provider: str = "openrouter"):
     models.sort(key=lambda m: m["id"])
     _cache[provider] = {"at": now, "models": models}
     return {"models": models, "cached": False}
+
+
+# ── The Claude plan: its usage limits, and what each call on it used ───────────────────
+
+MOST_CALLS_LISTED = 50
+JOB_OF_A_CALL = {"pdf": "Import", "tailor": "Tailor", "ats_score": "ATS score"}
+
+
+@router.get("/claude-code-usage")
+async def claude_code_usage(calls: int = 15):
+    """How much of the Claude plan's 5-hour and 7-day limits is used, and the tokens of the latest Claude Code calls.
+
+    Every count is what the CLI reported for that call, so it includes what the CLI adds to a prompt and the
+    model's thinking. `added_per_call` says how much of the input that addition is.
+    """
+    from backend.analyzer import llm_client
+    from backend.models.db import LlmCallLog
+
+    limits = await llm_client.claude_code_limits()
+    db = SessionLocal()
+    try:
+        rows = (db.query(LlmCallLog).filter(LlmCallLog.provider == "claude_code")
+                .order_by(LlmCallLog.created_at.desc()).limit(max(1, min(calls, MOST_CALLS_LISTED))).all())
+        latest = [{"job": JOB_OF_A_CALL.get(row.purpose, row.purpose), "model": row.model,
+                   "at": row.created_at.isoformat() if row.created_at else None,
+                   "input_tokens": (row.input_tokens or 0) + (row.cache_read_tokens or 0) + (row.cache_write_tokens or 0),
+                   "output_tokens": row.output_tokens or 0,
+                   "seconds": round((row.duration_ms or 0) / 1000, 1), "succeeded": bool(row.success)}
+                  for row in rows]
+    finally:
+        db.close()
+    return {"limits": limits, "calls": latest,
+            "added_per_call": {"always": llm_client.CLAUDE_CODE_TOKENS_ADDED_PER_CALL,
+                               "for_a_reply_format": llm_client.CLAUDE_CODE_TOKENS_ADDED_FOR_A_REPLY_FORMAT}}

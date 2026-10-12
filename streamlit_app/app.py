@@ -280,8 +280,11 @@ def _show_rubric_score(score: dict):
         st.caption("Alternatives the posting offered that were not needed, because another one is met: "
                    + ", ".join(found["alternatives_not_needed"]))
     if score.get("input_tokens"):
-        st.caption(f"{score.get('model')}: {score['input_tokens']} tokens in, {score['output_tokens']} out, "
-                   f"${score.get('cost_usd', 0):.4f}")
+        thinking = score.get("thinking_tokens") or 0
+        of_which = f" (of which {thinking:,} thinking)" if thinking else ""
+        st.caption(f"Tokens for this score, over {score.get('times_asked', 1)} call(s) to {score.get('model')}: "
+                   f"{score['input_tokens']:,} in, {score['output_tokens']:,} out{of_which}. "
+                   "These are what the model was sent and wrote in full, with anything the route adds and all thinking.")
 
 
 def _show_ats_score(score: dict):
@@ -339,8 +342,58 @@ def _ats_score_panel(resume_id: str):
             _show_ats_score(st.session_state.ats_scores[resume_id])
 
 
+def _when(seconds_since_1970) -> str:
+    """A reset time as this computer's clock would show it."""
+    if not seconds_since_1970:
+        return "an unknown time"
+    return time.strftime("%a %d %b, %H:%M", time.localtime(seconds_since_1970))
+
+
+def _show_a_limit(name: str, window) -> None:
+    if not window:
+        st.caption(f"{name}: not reported")
+        return
+    used = max(0.0, min(1.0, window["used"]))
+    st.progress(used, text=f"{name}: {100 * used:.0f}% used · resets {_when(window.get('resets_at'))}")
+
+
+def _claude_plan_usage_panel():
+    """The Claude plan's limits and what the latest Claude Code calls used, read when asked for."""
+    with st.expander("Claude plan usage"):
+        st.caption("For engines that run on the Claude Code login. Checking makes one very small call.")
+        if st.button("Check usage", key="claude-usage-check"):
+            with st.spinner("Reading the limits…"):
+                try:
+                    st.session_state.claude_usage = api.get_claude_code_usage()
+                except api.BackendError as e:
+                    st.error(str(e))
+        usage = st.session_state.get("claude_usage")
+        if not usage:
+            return
+        limits = usage.get("limits")
+        if limits:
+            _show_a_limit("5-hour window", limits.get("five_hour"))
+            _show_a_limit("7-day window", limits.get("seven_day"))
+            if limits.get("status") and limits["status"] != "allowed":
+                st.warning(f"The plan is reporting: {limits['status']}. Calls may be refused until a window resets.")
+        else:
+            st.caption("The limits could not be read. The backend may have no Claude Code login.")
+        calls = usage.get("calls") or []
+        if calls:
+            st.markdown("**Latest calls on the plan**")
+            st.dataframe([{"Job": call["job"], "Model": call["model"], "Tokens in": call["input_tokens"],
+                           "Tokens out": call["output_tokens"], "Seconds": call["seconds"]} for call in calls],
+                         hide_index=True, use_container_width=True)
+        added = usage.get("added_per_call") or {}
+        st.caption(f"Tokens in and out are the full counts for each call. Tokens in include about "
+                   f"{added.get('always', 0)} that Claude Code adds to every call, and about "
+                   f"{added.get('for_a_reply_format', 0)} more when a reply format is asked for, which "
+                   "import, tailoring and scoring all do. Tokens out include the model's thinking.")
+
+
 # ── sidebar: where the backend is ───────────────────────────────────────────────
 with st.sidebar:
+    _claude_plan_usage_panel()
     st.subheader("Engine")
     try:
         _settings = api.get_settings()

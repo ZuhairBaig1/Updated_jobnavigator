@@ -868,3 +868,22 @@ def test_a_stored_prompt_with_the_target_title_rule_gains_the_job_board_rule_onc
 
     stored_now = test_db.query(Setting).filter(Setting.key == "cv_tailor_prompt").first().value
     assert stored_now == seed.DEFAULT_SETTINGS["cv_tailor_prompt"][0]
+
+
+def test_the_claude_code_haiku_engine_is_accepted_and_used_by_both_resume_jobs(api_client, test_db):
+    """The four settings the Streamlit "Claude Code — haiku-5.5" engine writes."""
+    from backend.analyzer.llm_client import resolve_llm_config
+    test_db.add(Setting(key="dashboard_api_key", value=""))
+    for key in ("parse_llm_provider", "parse_llm_model", "cv_tailor_llm_provider", "cv_tailor_llm_model"):
+        test_db.add(Setting(key=key, value=""))
+    test_db.commit()
+
+    reply = api_client.patch("/api/settings", json={
+        "parse_llm_provider": "claude_code", "parse_llm_model": "claude-haiku-5-5",
+        "cv_tailor_llm_provider": "claude_code", "cv_tailor_llm_model": "claude-haiku-5-5"})
+
+    assert reply.status_code == 200, reply.text
+    test_db.expire_all()
+    for feature in ("parse", "cv_tailor"):
+        chosen = resolve_llm_config(feature, db=test_db)
+        assert (chosen["provider"], chosen["model"]) == ("claude_code", "claude-haiku-5-5")

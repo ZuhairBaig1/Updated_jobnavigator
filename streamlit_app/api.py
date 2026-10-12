@@ -142,6 +142,14 @@ def get_ats_score(resume_id: str, job_description: str = "", method: str = "") -
     return r.json()
 
 
+def get_claude_code_usage() -> dict:
+    """The Claude plan's 5-hour and 7-day limits, and the tokens of the latest calls made on it.
+
+    Reading the limits costs the backend one very small call, so this is asked for, not polled.
+    """
+    return _get("/api/llm/claude-code-usage", timeout=90).json()
+
+
 def get_run(run_id: str) -> dict:
     return _get(f"/api/monitor/run/{run_id}").json()
 
@@ -252,6 +260,16 @@ ENGINES = {
             "parse_llm_model": "claude-sonnet-5-5",
             "cv_tailor_llm_provider": "claude_code",
             "cv_tailor_llm_model": "claude-sonnet-5-5",
+        },
+    },
+    "Claude Code Haiku": {
+        "label": "Claude Code — haiku-5.5",
+        "help": "Both jobs on the Claude Code CLI with your Claude plan, on Haiku 5.5: about 50s to import a long résumé and 80s to tailor it. Far lighter on the plan's usage limits than Sonnet, and local only — a hosted backend has no claude binary to run and no way to log one in.",
+        "settings": {
+            "parse_llm_provider": "claude_code",
+            "parse_llm_model": "claude-haiku-5-5",
+            "cv_tailor_llm_provider": "claude_code",
+            "cv_tailor_llm_model": "claude-haiku-5-5",
         },
     },
 }

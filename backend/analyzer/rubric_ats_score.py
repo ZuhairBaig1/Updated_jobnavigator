@@ -27,12 +27,14 @@ import hashlib
 import json
 import logging
 import re
+import time
 from datetime import date
 
 from backend.analyzer import keyword_match, line_match
 from backend.analyzer.job_requirements import clean_job_text
 from backend.analyzer.llm_client import call_llm
 from backend.analyzer.llm_cost import calc_cost
+from backend.analyzer.llm_logger import log_llm_call
 
 logger = logging.getLogger("jobnavigator.rubric_ats_score")
 
@@ -511,7 +513,7 @@ async def ats_score(resume_text: str, job_text: str, provider: str = PROVIDER, m
 
     Returns {"ats_score", "scorer", "model", "same_occupation", "core_skills_kept", "total_of_parts", "parts",
     "rubric": [rows], "keywords", "core_skills", "duties", "missing", "times_asked", "remembered",
-    "input_tokens", "output_tokens", "cost_usd"}.
+    "input_tokens", "output_tokens", "thinking_tokens", "cost_usd"}. thinking_tokens are part of output_tokens.
     A rubric row is {"question", "asks", "option", "meaning", "option_share", "share", "weight", "reason"}:
     option_share is what the option shown stands for, share is what the part earned over all the replies.
     Returns None when the model cannot be asked or none of its replies is usable.
@@ -545,19 +547,23 @@ async def ats_score(resume_text: str, job_text: str, provider: str = PROVIDER, m
     shares[CORE_SKILLS] = _core_skills_share(answers[CORE_SKILLS][OPTION], core_skills["share"])
     input_tokens = sum(reply["input_tokens"] for reply in replies)
     output_tokens = sum(reply["output_tokens"] for reply in replies)
+    thinking_tokens = sum(reply["thinking_tokens"] for reply in replies)
     score = score_from_shares(shares, keywords["share"], core_skills["share"])
     result = {**score, "scorer": "rubric", "model": replies[0]["model"] or model,
               "rubric": _rubric_rows(answers, score["parts"], duties), "keywords": keywords,
               "core_skills": core_skills, "duties": duties, "remembered": False,
               "missing": [str(item) for item in (answers.get(MISSING) or [])][:MOST_MISSING_REQUIREMENTS],
               "times_asked": len(replies), "input_tokens": input_tokens, "output_tokens": output_tokens,
+              "thinking_tokens": thinking_tokens,
               "cost_usd": calc_cost(provider, model, input_tokens, output_tokens)}
     _remember(remembered_as, result)
     return result
 
 
 async def _one_reply(prompt: str, provider: str, model: str) -> dict | None:
-    """One answer to the rubric: {"answers", "model", "input_tokens", "output_tokens"}, or None when it is not usable."""
+    """One answer to the rubric: {"answers", "model", "input_tokens", "output_tokens", "thinking_tokens"}, or None
+    when it is not usable. thinking_tokens are part of output_tokens."""
+    started = time.monotonic()
     try:
         reply = await call_llm(prompt, SYSTEM_PROMPT, max_tokens=MOST_REPLY_TOKENS, provider=provider, model=model,
                                response_schema=_schema_of_the_reply(), schema_name="ats_rubric", temperature=0)
@@ -569,10 +575,11 @@ async def _one_reply(prompt: str, provider: str, model: str) -> dict | None:
         logger.warning(f"A rubric reply was not usable: {(reply.get('text') or '')[:200]!r}")
         return None
     usage = reply.get("usage") or {}
+    log_llm_call("ats_score", provider, model, usage, duration_ms=int(1000 * (time.monotonic() - started)))
     # Input the provider served from its cache is input all the same.
     input_tokens = sum(usage.get(key, 0) or 0 for key in ("input_tokens", "cache_read_tokens", "cache_write_tokens"))
     return {"answers": answers, "model": reply.get("model"), "input_tokens": input_tokens,
-            "output_tokens": usage.get("output_tokens", 0) or 0}
+            "output_tokens": usage.get("output_tokens", 0) or 0, "thinking_tokens": usage.get("thinking_tokens", 0) or 0}
 
 
 def _middle_answers(all_answers: list) -> dict:

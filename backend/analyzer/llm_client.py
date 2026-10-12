@@ -623,9 +623,77 @@ def _claude_code_usage(envelope) -> dict:
         value = used.get(key)
         return value if isinstance(value, int) and value > 0 else 0
 
+    thinking = (used.get("output_tokens_details") or {}).get("thinking_tokens")
     return {"input_tokens": count("input_tokens"), "output_tokens": count("output_tokens"),
             "cache_read_tokens": count("cache_read_input_tokens"),
-            "cache_write_tokens": count("cache_creation_input_tokens")}
+            "cache_write_tokens": count("cache_creation_input_tokens"),
+            # Part of output_tokens, not on top of it.
+            "thinking_tokens": thinking if isinstance(thinking, int) and thinking > 0 else 0}
+
+
+# What the CLI adds to every call, measured with an empty prompt on Haiku 5.5: its own text
+# (a billing tag, one identity sentence, an environment note), and the wrapper it puts round a reply format.
+CLAUDE_CODE_TOKENS_ADDED_PER_CALL = 340
+CLAUDE_CODE_TOKENS_ADDED_FOR_A_REPLY_FORMAT = 500
+
+# The plan's limits move slowly and reading them costs a small call, so a reading is kept this long.
+CLAUDE_CODE_LIMITS_KEPT_SECONDS = 60
+CLAUDE_CODE_MODEL_ASKED_FOR_THE_LIMITS = "claude-haiku-5-5"
+_claude_code_limits_read = {"at": 0.0, "limits": None}
+
+
+async def claude_code_limits() -> dict | None:
+    """How much of the Claude plan's 5-hour and 7-day usage limits is used, as the CLI reports it.
+
+    Returns {"status", "five_hour": {"used", "resets_at"}, "seven_day": {"used", "resets_at"}, "read_at"},
+    with used from 0 to 1 and the times in seconds since 1970. None when the CLI cannot say.
+    The CLI only reports the limits alongside a call, so this makes the smallest one it can.
+    """
+    import os
+    import tempfile
+    import time as _time
+
+    if _time.time() - _claude_code_limits_read["at"] < CLAUDE_CODE_LIMITS_KEPT_SECONDS:
+        return _claude_code_limits_read["limits"]
+    cmd = ["claude", "-p", "--output-format", "stream-json", "--verbose", *CLAUDE_CODE_PLAIN_MODEL_FLAGS,
+           "--system-prompt", "Reply with the single word ok.", "--model", CLAUDE_CODE_MODEL_ASKED_FOR_THE_LIMITS,
+           "--effort", "low"]
+    env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+    try:
+        with tempfile.TemporaryDirectory(prefix="jobnavigator-claude-") as workdir:
+            _rc, stdout, _stderr = await _run_cli(cmd, b"ok", env=env, cwd=workdir, timeout=60)
+    except Exception as error:
+        logger.warning(f"The Claude plan's limits could not be read ({type(error).__name__}: {error})")
+        return None
+    limits = _claude_code_limits_in(stdout.decode(errors="replace"))
+    if limits:
+        limits["read_at"] = int(_time.time())
+    _claude_code_limits_read.update(at=_time.time(), limits=limits)
+    return limits
+
+
+def _claude_code_limits_in(stream: str) -> dict | None:
+    """The limits from the CLI's stream of events: it sends one event carrying them with every call."""
+    import json as _json
+
+    for line in stream.splitlines():
+        try:
+            event = _json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(event, dict) or event.get("type") != "rate_limit_event":
+            continue
+        info = event.get("rate_limit_info") or {}
+        windows = info.get("unifiedWindows") or {}
+
+        def window(name: str) -> dict | None:
+            reading = windows.get(name)
+            if not isinstance(reading, dict) or reading.get("utilization") is None:
+                return None
+            return {"used": float(reading["utilization"]), "resets_at": reading.get("resetsAt")}
+
+        return {"status": info.get("status"), "five_hour": window("five_hour"), "seven_day": window("seven_day")}
+    return None
 
 
 class CLITimeoutError(RuntimeError):

@@ -847,3 +847,24 @@ def test_the_tailor_prompt_says_the_summary_is_never_shortened():
     prompt = DEFAULT_SETTINGS["cv_tailor_prompt"][0]
     assert "Never make the summary shorter than the resume's own" in prompt
     assert "One concise paragraph" not in prompt
+
+
+def test_the_tailor_prompt_says_where_the_target_title_comes_from():
+    from backend.seed import DEFAULT_SETTINGS
+    prompt = DEFAULT_SETTINGS["cv_tailor_prompt"][0]
+
+    assert "Never take it from a job board's fields" in prompt
+    assert prompt.count("target_job_title is a separate field") == 1
+
+
+def test_a_stored_prompt_with_the_target_title_rule_gains_the_job_board_rule_once(test_db):
+    from backend import seed
+    stored_before = seed.DEFAULT_SETTINGS["cv_tailor_prompt"][0].replace(seed._WHERE_THE_TARGET_TITLE_COMES_FROM, "")
+    test_db.add(Setting(key="cv_tailor_prompt", value=stored_before))
+    test_db.commit()
+
+    seed.bring_stored_tailor_prompts_up_to_date(test_db)
+    seed.bring_stored_tailor_prompts_up_to_date(test_db)
+
+    stored_now = test_db.query(Setting).filter(Setting.key == "cv_tailor_prompt").first().value
+    assert stored_now == seed.DEFAULT_SETTINGS["cv_tailor_prompt"][0]

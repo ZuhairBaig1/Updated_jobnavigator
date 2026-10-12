@@ -21,8 +21,15 @@ _OLD_HEADLINE_RULE = (
 _HEADLINE_RULE = (
     "- The header's title is the candidate's own headline, the line the resume prints under the name. Keep the resume's own, or narrow it to the part of it that fits the posting (\"GenAI / LLM Engineer | Python Backend Engineer\" -> \"GenAI / LLM Engineer\"). Never invent one, never add seniority the resume does not claim, and never put the posting's job title here: that has its own field, target_job_title.\n"
 )
+_TARGET_TITLE_RULE_BEFORE_JOB_BOARD_FIELDS = (
+    "- target_job_title is a separate field, outside the header: the job title of the posting, copied word for word from the job description, with no synonym, no rewording and no seniority added or removed. It names the role being applied for, not a title the candidate has held, so rule 0 does not apply to it and it is expected to be missing from the resume. Leave it empty when the posting states no clear job title.\n"
+)
+_WHERE_THE_TARGET_TITLE_COMES_FROM = (
+    "- Take the target job title from the posting's own title. When it prints none, take the role it says it is hiring (\"We are looking for a skilled Cloud DevOps Engineer\" -> \"Cloud DevOps Engineer\"). Never take it from a job board's fields such as \"Role:\" or \"Role Category:\": those name a category, and drop the words a recruiter searches for.\n"
+)
 _TARGET_TITLE_RULE = (
     "- target_job_title is a separate field, outside the header: the job title of the posting, copied word for word from the job description, with no synonym, no rewording and no seniority added or removed. It names the role being applied for, not a title the candidate has held, so rule 0 does not apply to it and it is expected to be missing from the resume. Leave it empty when the posting states no clear job title.\n"
+    + _WHERE_THE_TARGET_TITLE_COMES_FROM +
     "- The posting's job title goes nowhere else: never into a role's job title in work experience, and never into the summary as a title the candidate has held, unless the resume shows they held it.\n"
 )
 _OLD_NO_QUOTA_RULE = "- There is no quota. Never add a mention to reach a count"
@@ -1441,6 +1448,9 @@ def bring_stored_tailor_prompts_up_to_date(db):
         prompt = row.value
         if _TARGET_TITLE_RULE not in prompt:
             prompt = prompt.replace(_OLD_HEADLINE_RULE, _HEADLINE_RULE + _TARGET_TITLE_RULE)
+        if _WHERE_THE_TARGET_TITLE_COMES_FROM not in prompt:
+            prompt = prompt.replace(_TARGET_TITLE_RULE_BEFORE_JOB_BOARD_FIELDS,
+                                    _TARGET_TITLE_RULE_BEFORE_JOB_BOARD_FIELDS + _WHERE_THE_TARGET_TITLE_COMES_FROM)
         if _KEYWORD_RANGE_RULE not in prompt:
             prompt = prompt.replace(_OLD_NO_QUOTA_RULE, _KEYWORD_RANGE_RULE + _NO_QUOTA_RULE)
         if _SUMMARY_LENGTH_RULE not in prompt:

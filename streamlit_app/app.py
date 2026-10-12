@@ -273,6 +273,9 @@ def _show_rubric_score(score: dict):
     st.caption(f"Used in a role: {', '.join(found.get('used') or []) or 'none'}")
     st.caption(f"Only listed as a skill: {', '.join(found.get('listed') or []) or 'none'}")
     st.caption(f"Not in the resume: {', '.join(found.get('missing') or []) or 'none'}")
+    if found.get("shown_another_way"):
+        st.caption("Counted as used because a role shows it under another name: "
+                   + ", ".join(f"{item['keyword']} (by {item['shown_by']})" for item in found["shown_another_way"]))
     if found.get("alternatives_not_needed"):
         st.caption("Alternatives the posting offered that were not needed, because another one is met: "
                    + ", ".join(found["alternatives_not_needed"]))

@@ -44,7 +44,7 @@ GEMMA, HAIKU, HAIKU_ON_THE_CLAUDE_PLAN = "gemma", "haiku", "haiku_plan"
 MODELS = {GEMMA: (PROVIDER, MODEL), HAIKU: (PROVIDER, "anthropic/claude-haiku-5.5"),
           HAIKU_ON_THE_CLAUDE_PLAN: ("claude_code", "claude-haiku-5-5")}
 # Seven reasons of a sentence each, seven picks, the duties sorted into two lists, and three missing requirements.
-MOST_REPLY_TOKENS = 900
+MOST_REPLY_TOKENS = 1000
 MOST_WORDS_IN_A_REASON = 20
 RESUME_MAX_CHARS = 24_000
 POSTING_MAX_CHARS = 8_000
@@ -52,7 +52,7 @@ MOST_MISSING_REQUIREMENTS = 3
 # How many times the model is asked. The middle pick of an odd number of answers needs no tie-break.
 TIMES_ASKED = 3
 # Changed whenever the rubric, the prompt or the arithmetic changes, so remembered scores are not reused.
-VERSION = "6"
+VERSION = "8"
 MOST_SCORES_REMEMBERED = 500
 
 
@@ -153,6 +153,9 @@ SYSTEM_PROMPT = (
     "Use only the two texts. "
     f"In core_skills_named, list the 3 to {MOST_CORE_SKILLS_NAMED} tools or platforms the job is mainly about, each "
     "as one product name from the posting (Kubernetes, not \"container orchestration\"). "
+    "In shown_another_way, for each keyword the keyword check gives as only listed or not in the resume: if a role "
+    "shows the candidate using it under another name (a tool that is a kind of it, or a product built on it), give "
+    "the keyword and the name the role uses. Related work with no such name does not count. Leave out the rest. "
     "In duties_met and duties_not_met, sort every duty the posting describes, a few words each, by whether a role "
     "shows the candidate doing it. "
     f"In missing, name up to {MOST_MISSING_REQUIREMENTS} of the posting's most important requirements the resume "
@@ -160,6 +163,7 @@ SYSTEM_PROMPT = (
 )
 
 REASON, OPTION, MISSING, CORE_SKILLS_NAMED = "reason", "option", "missing", "core_skills_named"
+SHOWN_ANOTHER_WAY, KEYWORD, SHOWN_BY = "shown_another_way", "keyword", "shown_by"
 
 
 def _schema_of_the_reply() -> dict:
@@ -172,6 +176,9 @@ def _schema_of_the_reply() -> dict:
             "properties": {REASON: {"type": "string"},
                            OPTION: {"type": "string", "enum": list(details["options"])}},
         }
+    properties[SHOWN_ANOTHER_WAY] = {"type": "array", "items": {
+        "type": "object", "additionalProperties": False, "required": [KEYWORD, SHOWN_BY],
+        "properties": {KEYWORD: {"type": "string"}, SHOWN_BY: {"type": "string"}}}}
     properties[MISSING] = {"type": "array", "items": {"type": "string"}}
     return {"type": "object", "additionalProperties": False, "required": list(properties), "properties": properties}
 
@@ -205,23 +212,62 @@ def keyword_check(resume_text: str, job_text: str) -> dict:
     def place_of(name: str) -> str:
         return USED if name in in_the_work else LISTED if name in anywhere else MISSING_KEYWORD
 
-    found = {USED: [], LISTED: [], MISSING_KEYWORD: [], "alternatives_not_needed": []}
-    worth = []
+    requirements, not_needed = [], []
     for requirement in keyword_requirements(job_text):
         best = max(requirement, key=lambda name: WORTH_OF_A_KEYWORD[place_of(name)])
         place = place_of(best)
-        worth.append(WORTH_OF_A_KEYWORD[place])
         if place == MISSING_KEYWORD:
-            found[place].append(" or ".join(requirement.values()))
+            requirements.append({"label": " or ".join(requirement.values()), "place": place})
         else:
-            found[place].append(requirement[best])
-            found["alternatives_not_needed"] += [written for name, written in requirement.items()
-                                                 if name != best and place_of(name) == MISSING_KEYWORD]
-    for key in found:
-        found[key] = list(dict.fromkeys(found[key]))
-    found["alternatives_not_needed"] = [written for written in found["alternatives_not_needed"]
-                                        if written not in found[USED] + found[LISTED] + found[MISSING_KEYWORD]]
-    return {**found, "share": round(sum(worth) / len(worth), 2) if worth else None}
+            requirements.append({"label": requirement[best], "place": place})
+            not_needed += [written for name, written in requirement.items()
+                           if name != best and place_of(name) == MISSING_KEYWORD]
+    return _keywords_summed_up(requirements, not_needed, shown_another_way=[])
+
+
+def _keywords_summed_up(requirements: list, not_needed: list, shown_another_way: list) -> dict:
+    """The keyword check as its lists and its share, from each requirement's label and place."""
+    found = {place: list(dict.fromkeys(r["label"] for r in requirements if r["place"] == place)) for place in PLACES}
+    everything_placed = found[USED] + found[LISTED] + found[MISSING_KEYWORD]
+    worth = [WORTH_OF_A_KEYWORD[requirement["place"]] for requirement in requirements]
+    return {**found,
+            "alternatives_not_needed": [w for w in dict.fromkeys(not_needed) if w not in everything_placed],
+            "shown_another_way": shown_another_way,
+            "share": round(sum(worth) / len(worth), 2) if worth else None,
+            "requirements": requirements}
+
+
+# A keyword the résumé only lists, or does not name, may still be shown in a role under another name:
+# Terraform is Infrastructure as Code, and EKS is Kubernetes. Word matching cannot see that, so the model
+# says which of those keywords a role shows and what the role calls it. It counts when most replies agree.
+def with_keywords_shown_another_way(keywords: dict, all_answers: list) -> dict:
+    """The keyword check with every requirement most replies say a role shows under another name counted as used."""
+    said_by = {}
+    for answers in all_answers:
+        named = {}
+        for item in answers.get(SHOWN_ANOTHER_WAY) or []:
+            if isinstance(item, dict) and str(item.get(KEYWORD) or "").strip() and str(item.get(SHOWN_BY) or "").strip():
+                named.setdefault(str(item[KEYWORD]).strip().lower(), str(item[SHOWN_BY]).strip())
+        for keyword, shown_by in named.items():
+            said_by.setdefault(keyword, []).append(shown_by)
+    agreed = {keyword: names[0] for keyword, names in said_by.items() if len(names) > len(all_answers) / 2}
+
+    requirements, shown = [], []
+    for requirement in keywords["requirements"]:
+        keyword = _keyword_agreed_for(requirement, agreed)
+        if keyword:
+            shown.append({KEYWORD: requirement["label"], SHOWN_BY: agreed[keyword]})
+            requirement = {**requirement, "place": USED}
+        requirements.append(requirement)
+    return _keywords_summed_up(requirements, keywords["alternatives_not_needed"], shown)
+
+
+def _keyword_agreed_for(requirement: dict, agreed: dict):
+    """The agreed keyword that names this requirement, when the résumé does not already use it in a role."""
+    if requirement["place"] == USED:
+        return None
+    its_keywords = [part.strip().lower() for part in requirement["label"].split(" or ")]
+    return next((keyword for keyword in agreed if keyword in its_keywords), None)
 
 
 def keyword_requirements(job_text: str) -> list:
@@ -261,15 +307,19 @@ def _without_repeats(choices: list) -> list:
     return kept
 
 
-def core_skill_check(resume_text: str, named: list) -> dict:
+def core_skill_check(resume_text: str, named: list, shown_another_way: list = ()) -> dict:
     """Which of the skills the model called core the roles actually name, and the share that is.
 
+    A core skill the replies agreed a role shows under another name (EKS for Kubernetes) counts as named.
     Returns {"named", "used", "not_used", "share"}; share is None when the model named none.
     """
     work = line_match._work_part_of(resume_text)
     skills_in_the_work = set(keyword_match.skills_in(work))
+    shown_under_another_name = {part.strip().lower() for item in shown_another_way
+                                for part in str(item[KEYWORD]).split(" or ")}
     named = [str(skill).strip() for skill in (named or []) if str(skill).strip()][:MOST_CORE_SKILLS_NAMED]
-    used = [skill for skill in named if _is_used_in(skill, work, skills_in_the_work)]
+    used = [skill for skill in named
+            if _is_used_in(skill, work, skills_in_the_work) or skill.lower() in shown_under_another_name]
     return {"named": named, "used": used, "not_used": [skill for skill in named if skill not in used],
             "share": round(len(used) / len(named), 2) if named else None}
 
@@ -439,6 +489,7 @@ async def ats_score(resume_text: str, job_text: str, provider: str = PROVIDER, m
         return None
 
     all_answers = [reply["answers"] for reply in replies]
+    keywords = with_keywords_shown_another_way(keywords, all_answers)
     answers = _middle_answers(all_answers)
     shares = _average_shares(all_answers)
     from_the_dates = experience_from_the_dates(resume_text, job_text)
@@ -449,7 +500,8 @@ async def ats_score(resume_text: str, job_text: str, provider: str = PROVIDER, m
     shares[DUTIES] = duties["share"]
     if not roles_state_a_result_in_numbers(resume_text):
         _hold_the_evidence_below_strong(answers, shares)
-    core_skills = core_skill_check(resume_text, _core_skills_most_replies_name(all_answers))
+    core_skills = core_skill_check(resume_text, _core_skills_most_replies_name(all_answers),
+                                   keywords["shown_another_way"])
     shares[OCCUPATION] = RUBRIC[OCCUPATION]["options"][answers[OCCUPATION][OPTION]][1]
     shares[CORE_SKILLS] = _core_skills_share(answers[CORE_SKILLS][OPTION], core_skills["share"])
     input_tokens = sum(reply["input_tokens"] for reply in replies)

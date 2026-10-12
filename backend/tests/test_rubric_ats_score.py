@@ -23,10 +23,12 @@ def nothing_remembered():
     rubric._scores_remembered.clear()
 
 
-def _reply(picks=BEST_PICKS, missing=("Datadog",), core=("Kubernetes",), met=("Run clusters",), not_met=()):
+def _reply(picks=BEST_PICKS, missing=("Datadog",), core=("Kubernetes",), met=("Run clusters",), not_met=(),
+           another_way=()):
     answers = {question: {"reason": f"why {question}", "option": option} for question, option in picks.items()}
+    shown = [{"keyword": keyword, "shown_by": shown_by} for keyword, shown_by in another_way]
     return {"text": json.dumps({"core_skills_named": list(core), "duties_met": list(met), "duties_not_met": list(not_met),
-                                **answers, "missing": list(missing)}),
+                                **answers, "shown_another_way": shown, "missing": list(missing)}),
             "usage": {"input_tokens": 5000, "output_tokens": 300},
             "model": "google/gemma-4-31b-it"}
 
@@ -54,6 +56,7 @@ def test_keywords_are_sorted_by_where_the_resume_names_them():
     assert found["listed"] == ["Terraform"]
     assert found["missing"] == ["Datadog"]
     assert found["alternatives_not_needed"] == []
+    assert found["shown_another_way"] == []
     assert found["share"] == round((1 + 0.4) / 3, 2)
 
 
@@ -190,13 +193,14 @@ def test_every_question_asks_for_a_reason_before_one_of_its_own_options():
     for question, details in rubric.RUBRIC.items():
         assert list(schema["properties"][question]["properties"]) == ["reason", "option"]
         assert schema["properties"][question]["properties"]["option"]["enum"] == list(details["options"])
-    assert schema["required"] == ["core_skills_named", "duties_met", "duties_not_met"] + list(rubric.RUBRIC) + ["missing"]
+    assert schema["required"] == (["core_skills_named", "duties_met", "duties_not_met"] + list(rubric.RUBRIC)
+                                  + ["shown_another_way", "missing"])
 
 
 def test_the_prompts_stay_small():
     rubric_part = rubric._prompt("", "", {"used": [], "listed": [], "missing": []})
 
-    assert len(rubric.SYSTEM_PROMPT) < 1000
+    assert len(rubric.SYSTEM_PROMPT) < 1400
     assert len(rubric_part) < 3000
 
 
@@ -432,3 +436,45 @@ async def test_evidence_the_model_calls_strong_is_held_at_adequate_without_a_fig
     assert "No figure" in held["reason"]
     kept = [row for row in with_a_figure["rubric"] if row["question"] == "evidence"][0]
     assert (kept["option"], kept["share"]) == ("strong", 1.0)
+
+
+# ── A keyword a role shows under another name ──────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_a_keyword_most_replies_say_a_role_shows_another_way_counts_as_used(monkeypatch):
+    """Terraform is only in the skills list of this resume; the model says a role shows it as OpenTofu."""
+    _model_replies(monkeypatch, _reply(another_way=[("Terraform", "OpenTofu")]), _reply(another_way=[("terraform", "OpenTofu")]),
+                   _reply())
+
+    keywords = (await rubric.ats_score(RESUME, POSTING))["keywords"]
+
+    assert "Terraform" in keywords["used"] and "Terraform" not in keywords["listed"]
+    assert keywords["shown_another_way"] == [{"keyword": "Terraform", "shown_by": "OpenTofu"}]
+    assert keywords["share"] == round(2 / 3, 2)
+
+
+@pytest.mark.asyncio
+async def test_one_reply_alone_does_not_move_a_keyword(monkeypatch):
+    _model_replies(monkeypatch, _reply(another_way=[("Datadog", "CloudWatch")]), _reply())
+
+    keywords = (await rubric.ats_score(RESUME, POSTING))["keywords"]
+
+    assert keywords["missing"] == ["Datadog"]
+    assert keywords["shown_another_way"] == []
+
+
+@pytest.mark.asyncio
+async def test_a_keyword_the_check_never_listed_cannot_be_added(monkeypatch):
+    _model_replies(monkeypatch, _reply(another_way=[("Snowflake", "BigQuery")]))
+
+    keywords = (await rubric.ats_score(RESUME, POSTING))["keywords"]
+
+    assert keywords["shown_another_way"] == []
+    assert keywords["share"] == round((1 + 0.4) / 3, 2)
+
+
+def test_a_core_skill_shown_under_another_name_counts_as_named_in_the_roles():
+    check = rubric.core_skill_check(RESUME, ["Kubernetes", "Terraform"], [{"keyword": "Terraform", "shown_by": "OpenTofu"}])
+
+    assert check["used"] == ["Kubernetes", "Terraform"]
+    assert check["share"] == 1.0

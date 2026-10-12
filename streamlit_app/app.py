@@ -222,6 +222,19 @@ def _what_a_part_earned(row: dict, times_asked: int) -> str:
     return earned
 
 
+KEYWORD_WEIGHT = "15%"
+
+
+def _keyword_row(found: dict) -> dict:
+    """The keyword match as a row of the table: it is a part of the score like the others, worked out by code."""
+    used, listed, missing = (len(found.get(key) or []) for key in ("used", "listed", "missing"))
+    share = found.get("share")
+    return {"Part": "Keyword match", "Picked": f"{used} of {used + listed + missing} keywords used in a role",
+            "Earned": "—" if share is None else f"{100 * share:.0f}%", "Weight": KEYWORD_WEIGHT,
+            "Reason": f"Checked by code, word for word: {used} used in a role, {listed} only listed as a skill "
+                      f"(each counts 40%), {missing} not in the resume."}
+
+
 def _show_time_taken(score: dict):
     """How long the score took to work out, as this app waited for it."""
     seconds = score.get("_seconds")
@@ -239,7 +252,7 @@ def _show_rubric_score(score: dict):
     core.metric("Core skills kept", f"{100 * score['core_skills_kept']:.0f}%")
     keyword_share = (score.get("keywords") or {}).get("share")
     keywords.metric("Keywords matched", "—" if keyword_share is None else f"{100 * keyword_share:.0f}%")
-    st.caption("Score = the parts below added by weight × same occupation × core skills kept. "
+    st.caption("Score = the parts below added by weight (the weights add up to 100%) × same occupation × core skills kept. "
                "The model picks one option per question and says why; the code does the arithmetic. "
                f"Asked {score.get('times_asked', 1)} times: each part earns the average, and the middle pick is shown.")
     for missing in score.get("missing") or []:
@@ -248,6 +261,7 @@ def _show_rubric_score(score: dict):
              "Earned": _what_a_part_earned(row, score.get("times_asked", 1)),
              "Weight": "scales the total" if row["weight"] is None else f"{100 * row['weight']:.0f}%",
              "Reason": row["reason"]} for row in score.get("rubric") or []]
+    rows.append(_keyword_row(score.get("keywords") or {}))
     st.dataframe(rows, hide_index=True, use_container_width=True)
     core = score.get("core_skills") or {}
     if core.get("named"):

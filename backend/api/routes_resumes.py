@@ -960,6 +960,7 @@ async def _tailor_impl(base_resume_id: str, job_id: str | None, job_description_
 
             jd_text = job_description_override or ""
             job_name = ""
+            title_of_the_job = ""
             job_ref = None
             if job_id:
                 job = db.query(Job).filter(Job.id == job_id).first()
@@ -967,6 +968,7 @@ async def _tailor_impl(base_resume_id: str, job_id: str | None, job_description_
                     logger.error(f"Tailor: job {job_id} missing at execution time")
                     raise RuntimeError(f"Tailor: job {job_id} missing at execution time")
                 job_name = f"{job.company} \u2014 {job.title}" if job.company else (job.title or "")
+                title_of_the_job = job.title or ""
                 job_ref = SimpleNamespace(id=job.id, description=job.description,
                                           url=job.url, cached_page_text=job.cached_page_text)
 
@@ -1066,7 +1068,7 @@ async def _tailor_impl(base_resume_id: str, job_id: str | None, job_description_
                 if attempt == 2:
                     raise ModelReplyError(UNPARSEABLE_MESSAGE)
 
-        tailored_data = build_tailored_resume(llm_result, base_data, jd_text)
+        tailored_data = build_tailored_resume(llm_result, base_data, jd_text, title_of_the_job)
 
         # Flag only: a term the copy states that its base does not support is logged for a
         # human to judge, never edited out. A rewrite that merges two bullets is legitimate,
@@ -1737,8 +1739,8 @@ def _tailor_context_jd(json_data: dict) -> str:
 
 def _resume_to_score_text(json_data: dict) -> str:
     """Flatten a Resume.json_data into the plaintext form passed to the scorer; a thin wrapper around analyzer.cv_scorer._flatten_resume so the pre-check and the LLM payload always agree on the canonical flatten (skills is a dict, not a list)."""
-    from backend.analyzer.cv_scorer import _flatten_resume
-    return _flatten_resume(json_data or {})
+    from backend.analyzer.cv_scorer import resume_text_for_scoring
+    return resume_text_for_scoring(json_data or {})
 
 
 async def _score_resume_impl(resume_id: str, depth: str):
@@ -1869,7 +1871,7 @@ ATS_SCORER = "jev"
 
 
 def _resume_text_and_its_job_description(resume_id: str) -> tuple:
-    """The résumé as plain text and the job description saved with it ("" when it has none)."""
+    """The résumé as plain text, the title lines it prints under the name, and the job description saved with it ("" when it has none)."""
     db = SessionLocal()
     try:
         resume = db.query(Resume).filter(Resume.id == resume_id).first()
@@ -1879,7 +1881,10 @@ def _resume_text_and_its_job_description(resume_id: str) -> tuple:
         if not saved_job_description and resume.job_id:
             job = db.query(Job).filter(Job.id == resume.job_id).first()
             saved_job_description = ((job.description or job.cached_page_text or "") if job else "").strip()
-        return _resume_to_score_text(resume.json_data or {}), saved_job_description
+        from backend.analyzer.cv_scorer import _title_lines
+        header = (resume.json_data or {}).get("header")
+        title_lines = _title_lines(header) if isinstance(header, dict) else []
+        return _resume_to_score_text(resume.json_data or {}), title_lines, saved_job_description
     finally:
         db.close()
 
@@ -1893,14 +1898,14 @@ async def ats_score_of_a_resume(resume_id: str, request_body: dict = None):
     """
     from backend.analyzer import line_match
 
-    resume_text, saved_job_description = _resume_text_and_its_job_description(resume_id)
+    resume_text, title_lines, saved_job_description = _resume_text_and_its_job_description(resume_id)
     job_description = str((request_body or {}).get("job_description") or "").strip() or saved_job_description
     if not job_description:
         raise HTTPException(status_code=400, detail="Paste a job description to score this resume against")
     if len(resume_text) < 50:
         raise HTTPException(status_code=400, detail="Resume has insufficient text for scoring")
 
-    result = await line_match.ats_score(ATS_SCORER, resume_text, job_description)
+    result = await line_match.ats_score(ATS_SCORER, resume_text, job_description, title_lines)
     if result is None:
         raise HTTPException(status_code=502, detail="The scoring model could not be reached. Try again.")
     return result

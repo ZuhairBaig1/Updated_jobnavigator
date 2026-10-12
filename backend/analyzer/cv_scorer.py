@@ -30,7 +30,21 @@ def reset_scoring_semaphore():
     reset_limiter("scoring")
 
 
-def _flatten_resume(json_data: dict) -> str:
+def _title_lines(header: dict) -> list:
+    """The title lines the résumé prints under the name: the posting's job title a copy was tailored for, then the headline."""
+    return [str(header[key]) for key in ("target_title", "title") if header.get(key)]
+
+
+def resume_text_for_scoring(json_data: dict) -> str:
+    """The résumé as a scorer reads it: its plain text, with the title lines the page prints under the name.
+
+    Cover letters and application answers use _flatten_resume without them, because the target title
+    names the job applied for and must not be read there as a title the candidate has held.
+    """
+    return _flatten_resume(json_data, with_title_lines=True)
+
+
+def _flatten_resume(json_data: dict, with_title_lines: bool = False) -> str:
     """Render a Resume.json_data dict (or Persona.resume_content) to plaintext with '## Section' headers for LLM scoring; empty sections are omitted."""
     if not json_data:
         return ""
@@ -40,6 +54,8 @@ def _flatten_resume(json_data: dict) -> str:
     if isinstance(header, dict):
         if header.get("name"):
             parts.append(str(header["name"]))
+        if with_title_lines:
+            parts.extend(_title_lines(header))
         contact_bits = []
         for key in ("email", "phone", "linkedin", "github", "website", "location"):
             if header.get(key):
@@ -149,7 +165,7 @@ def _get_persona_text(db) -> dict:
     p = db.query(Persona).filter(Persona.id == 1).first()
     if not p:
         return {}
-    text = _flatten_resume(p.resume_content or {})
+    text = resume_text_for_scoring(p.resume_content or {})
     if not text:
         return {}
     return {_PERSONA_DISPLAY: text}
@@ -160,7 +176,7 @@ def _get_resume_texts(db) -> dict:
     from backend.models.db import Resume
     out = {}
     for r in db.query(Resume).filter(Resume.is_base == True).order_by(Resume.id).all():
-        text = _flatten_resume(r.json_data or {})
+        text = resume_text_for_scoring(r.json_data or {})
         if text:
             out[r.name] = text
     out.update(_get_persona_text(db))
@@ -178,7 +194,7 @@ def _get_default_resume(db) -> dict:
     r = db.query(Resume).filter(Resume.id == row.value, Resume.is_base == True).first()
     if not r:
         return {}
-    text = _flatten_resume(r.json_data or {})
+    text = resume_text_for_scoring(r.json_data or {})
     if not text:
         return {}
     return {r.name: text}
@@ -193,7 +209,7 @@ def _get_resume_texts_for_company(db, company) -> dict:
         resume_ids = [s for s in selected if s != _PERSONA_KEY]
         if resume_ids:
             for r in db.query(Resume).filter(Resume.is_base == True, Resume.id.in_(resume_ids)).order_by(Resume.id).all():
-                text = _flatten_resume(r.json_data or {})
+                text = resume_text_for_scoring(r.json_data or {})
                 if text:
                     out[r.name] = text
         if _PERSONA_KEY in selected:
@@ -221,7 +237,7 @@ def _cv_texts_for_ids(db, cv_ids: list) -> dict:
         # handler picks it up; multiple in one batch fall back to Resume.name to avoid a dict-key collision.
         tailored_count = sum(1 for r in resumes if not r.is_base)
         for r in resumes:
-            text = _flatten_resume(r.json_data or {})
+            text = resume_text_for_scoring(r.json_data or {})
             if not text:
                 continue
             if r.is_base:

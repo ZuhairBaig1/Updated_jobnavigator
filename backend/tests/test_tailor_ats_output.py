@@ -74,8 +74,9 @@ REPLY = {
 # ── the response format ─────────────────────────────────────────────────────
 
 def test_schema_sections_are_the_kb_sections_in_order():
-    assert list(TAILOR_JSON_SCHEMA["properties"]) == KB_SECTIONS
-    assert TAILOR_JSON_SCHEMA["required"] == KB_SECTIONS
+    # The posting's own job title is asked for first, apart from the résumé's sections.
+    assert list(TAILOR_JSON_SCHEMA["properties"]) == ["target_job_title"] + KB_SECTIONS
+    assert TAILOR_JSON_SCHEMA["required"] == ["target_job_title"] + KB_SECTIONS
     assert list(TAILOR_JSON_SCHEMA["properties"]["header"]["properties"]) == [
         "name", "title", "location", "email", "phone", "work_authorization", "github", "linkedin"]
 
@@ -365,15 +366,16 @@ def test_a_rewrite_that_drops_what_the_posting_asks_for_keeps_the_base_summary()
             "skills": {"ETL / ELT": "Azure Data Factory, Adobe Airflow, Databricks"}}
     jd = "We need Azure Data Factory and Databricks experience on a modern data platform."
 
-    thinned = {**REPLY, "professional_summary": "Engineer using Adobe Airflow."}
+    # As long as the base's, but without the two terms the posting names.
+    thinned = {**REPLY, "professional_summary": "Engineer using Adobe Airflow on a modern cloud data platform."}
     assert build_tailored_resume(thinned, base, jd)["summary"] == base["summary"]
 
     # A rewrite that keeps them is used as written.
-    kept = {**REPLY, "professional_summary": "Azure Data Factory and Databricks engineer."}
-    assert build_tailored_resume(kept, base, jd)["summary"] == "Azure Data Factory and Databricks engineer."
+    kept = {**REPLY, "professional_summary": "Data platform engineer using Azure Data Factory, Airflow and Databricks."}
+    assert build_tailored_resume(kept, base, jd)["summary"] == kept["professional_summary"]
 
     # With no posting text there is nothing to protect, so the rewrite stands.
-    assert build_tailored_resume(thinned, base, "")["summary"] == "Engineer using Adobe Airflow."
+    assert build_tailored_resume(thinned, base, "")["summary"] == thinned["professional_summary"]
 
 
 def test_jd_protected_terms_are_what_the_resume_and_the_posting_share():
@@ -731,3 +733,117 @@ def test_haiku_starts_unpinned_because_no_default_pin_serves_it():
     import backend.analyzer.llm_client as L
 
     assert L.openrouter_ladder("anthropic/claude-haiku-5.5") == (None,)
+
+
+async def _temperature_sent_to_openrouter(monkeypatch, model):
+    import backend.analyzer.llm_client as L
+    sent = {}
+
+    async def fake_call_openai(prompt, system, model, api_key, max_tokens, **options):
+        sent.update(options)
+        return {"text": "{}", "usage": {}}
+    monkeypatch.setattr(L, "_call_openai", fake_call_openai)
+    await L._dispatch("openrouter", model, "key", "prompt", "system", 100, temperature=0.2)
+    return sent["temperature"]
+
+
+@pytest.mark.asyncio
+async def test_haiku_on_openrouter_is_sent_no_temperature(monkeypatch):
+    assert await _temperature_sent_to_openrouter(monkeypatch, "anthropic/claude-haiku-5.5") is None
+
+
+@pytest.mark.asyncio
+async def test_other_openrouter_models_keep_their_temperature(monkeypatch):
+    assert await _temperature_sent_to_openrouter(monkeypatch, "google/gemma-4-31b-it") == 0.2
+
+
+# ── The posting's job title, kept apart from the candidate's own headline ──────
+
+POSTING = "Lead Data Platform Engineer\n\nWe need someone who knows Python and Airflow."
+
+
+def test_the_stored_jobs_title_becomes_the_target_title_and_the_headline_stays():
+    header = build_tailored_resume(REPLY, BASE, POSTING, "Lead Data Platform Engineer")["header"]
+    assert header["target_title"] == "Lead Data Platform Engineer"
+    assert header["title"] == "Senior Data Engineer"
+
+
+def test_a_pasted_posting_gives_its_title_through_the_reply():
+    reply = {**REPLY, "target_job_title": "Lead Data Platform Engineer"}
+    assert build_tailored_resume(reply, BASE, POSTING)["header"]["target_title"] == "Lead Data Platform Engineer"
+
+
+def test_a_target_title_the_posting_never_states_is_left_out():
+    reply = {**REPLY, "target_job_title": "Principal Architect"}
+    assert "target_title" not in build_tailored_resume(reply, BASE, POSTING)["header"]
+
+
+def test_the_target_title_never_reaches_a_roles_title():
+    tailored = build_tailored_resume(REPLY, BASE, POSTING, "Lead Data Platform Engineer")
+    assert [role["title"] for role in tailored["experience"]] == [role["title"] for role in BASE["experience"]]
+
+
+def test_a_copy_tailored_without_a_posting_title_has_no_target_title():
+    assert "target_title" not in build_tailored_resume(REPLY, BASE)["header"]
+
+
+@pytest.mark.parametrize("name", sorted(p.parent.name for p in
+                                        (Path(__file__).parent.parent / "resume_templates").glob("*/template.html.j2")))
+def test_every_template_prints_the_target_title_and_the_headline(name):
+    from backend.api.routes_resumes import _render_html
+    html = _render_html(build_tailored_resume(REPLY, BASE, POSTING, "Lead Data Platform Engineer"), name, "letter")
+    assert "Lead Data Platform Engineer" in html
+    assert html.index("Lead Data Platform Engineer") < html.index("Senior Data Engineer")
+
+
+def test_the_tailor_prompt_separates_the_two_titles_and_gives_the_keyword_range():
+    from backend.seed import DEFAULT_SETTINGS
+    for key in ("cv_tailor_prompt", "persona_tailor_prompt"):
+        prompt = DEFAULT_SETTINGS[key][0]
+        assert "target_job_title is a separate field" in prompt
+        assert "never copy the posting's job title" not in prompt
+        assert "25-35 distinct keywords" in prompt
+
+
+def test_a_prompt_stored_before_the_change_is_brought_up_to_date_and_keeps_its_edits(test_db):
+    from backend import seed
+    stored_before = ("My own opening line.\n\n" + seed._TAILOR_RULES
+                     .replace(seed._HEADLINE_RULE + seed._TARGET_TITLE_RULE, seed._OLD_HEADLINE_RULE)
+                     .replace(seed._KEYWORD_RANGE_RULE + seed._NO_QUOTA_RULE, seed._OLD_NO_QUOTA_RULE)
+                     .replace(seed._SUMMARY_LENGTH_RULE, seed._OLD_SUMMARY_LENGTH_RULE))
+    assert "Never make the summary shorter" not in stored_before
+    assert "target_job_title" not in stored_before
+    test_db.add(Setting(key="cv_tailor_prompt", value=stored_before))
+    test_db.commit()
+
+    seed.bring_stored_tailor_prompts_up_to_date(test_db)
+    seed.bring_stored_tailor_prompts_up_to_date(test_db)   # a second run changes nothing
+
+    stored_now = test_db.query(Setting).filter(Setting.key == "cv_tailor_prompt").first().value
+    assert stored_now == "My own opening line.\n\n" + seed._TAILOR_RULES
+
+
+# ── The summary is rewritten, never cut down ──────────────────────────────────
+
+LONG_SUMMARY = ("Senior Data Engineer with 8+ years of experience building data platforms on Azure and AWS. "
+                "Skilled in Databricks, Kafka, Airflow and Snowflake across healthcare and financial services. "
+                "Experienced in improving processing efficiency, data quality and pipeline reliability.")
+
+
+def test_a_summary_the_rewrite_cut_down_is_replaced_by_the_resumes_own():
+    base = {**BASE, "summary": LONG_SUMMARY}
+    reply = {**REPLY, "professional_summary": "Senior Data Engineer with 8+ years of experience on Azure and AWS."}
+    assert build_tailored_resume(reply, base)["summary"] == LONG_SUMMARY
+
+
+def test_a_rewritten_summary_of_the_same_length_is_kept():
+    base = {**BASE, "summary": LONG_SUMMARY}
+    rewritten = LONG_SUMMARY.replace("building data platforms", "delivering data platforms")
+    assert build_tailored_resume({**REPLY, "professional_summary": rewritten}, base)["summary"] == rewritten
+
+
+def test_the_tailor_prompt_says_the_summary_is_never_shortened():
+    from backend.seed import DEFAULT_SETTINGS
+    prompt = DEFAULT_SETTINGS["cv_tailor_prompt"][0]
+    assert "Never make the summary shorter than the resume's own" in prompt
+    assert "One concise paragraph" not in prompt

@@ -152,31 +152,75 @@ def _is_a_tailored_copy(resume_id: str) -> bool:
     return any(resume_id == copy["id"] for base in bases for copy in base.get("copies") or [])
 
 
+WHERE_A_TOOL_IS_NAMED = {"only_listed": "only listed as a skill", "not_named": "not named"}
+
+
+def _what_holds_a_line_back(line: dict) -> str:
+    """Why a line earned less than Jev's coverage: the tools it names that the résumé does not show in its work."""
+    if line.get("credit", line["covered"]) >= line["covered"]:
+        return ""
+    held_back = [f"{tool} ({WHERE_A_TOOL_IS_NAMED[where]})" for tool, where in (line.get("tools") or {}).items()
+                 if where in WHERE_A_TOOL_IS_NAMED]
+    return ", ".join(held_back)
+
+
 def _requirement_rows(lines: list) -> list:
-    """The lines as table rows, the least covered first, so the gaps are at the top."""
-    rows = [{"Requirement": line["line"], "Covered": round(100 * line["covered"]),
-             "Importance (1-4)": line.get("importance")} for line in lines]
-    return sorted(rows, key=lambda row: row["Covered"])
+    """The lines as table rows, the lowest credit first, so the gaps are at the top."""
+    rows = [{"Requirement": line["line"], "Credit": round(100 * line.get("credit", line["covered"])),
+             "Coverage found": f"{100 * line['covered']:.0f}%",
+             "Held back by": _what_holds_a_line_back(line),
+             "Importance (1-8)": line.get("importance")} for line in lines]
+    return sorted(rows, key=lambda row: row["Credit"])
+
+
+def _show_findability(score: dict):
+    """Whether a recruiter's search would find the résumé. Shown beside the score, never part of it."""
+    findability, title = score.get("findability") or {}, score.get("title") or {}
+    if not findability:
+        return
+    st.markdown("**Findability** — would a recruiter's search turn this resume up?")
+    keywords, title_match = st.columns(2)
+    coverage = findability.get("keyword_coverage_pct")
+    keywords.metric("Posting keywords named", "—" if coverage is None else f"{coverage}%")
+    title_match.metric("Title match", f"{100 * title['match']:.0f}%" if title.get("present") else "No title")
+    if findability.get("missing_keywords"):
+        st.caption("Keywords in the posting that the resume never names: " + ", ".join(findability["missing_keywords"]))
+    if title.get("present"):
+        st.caption(f"Title match compares \"{title['best_line']}\" with the posting's job title. 100% is word for word.")
+    else:
+        st.caption("This resume prints no title under the name, so there is nothing to match against the posting's job title.")
+
+
+def _show_missing_essentials(score: dict):
+    """The plain-words verdict: which things the job cannot be done without are poorly shown, and what they cost."""
+    for missing in score.get("missing_essentials") or []:
+        not_shown = ", ".join(missing.get("tools_not_shown") or [])
+        what = f"**{not_shown}**" if not_shown else f"\"{missing['line']}\""
+        st.error(f"Missing essential: {what}. The job cannot be done without it, and the resume shows "
+                 f"{100 * missing['credit']:.0f}% of that requirement. This takes {100 * missing['cost']:.0f}% off the score.")
 
 
 def _show_ats_score(score: dict):
     if score.get("ats_score") is None:
         st.warning("No must-have or preferred lines were found in this job description, so there is nothing to score.")
         return
-    total, must_have, preferred, occupation = st.columns(4)
-    total.metric("ATS score", f"{score['ats_score']} / 100")
+    _show_missing_essentials(score)
+    total, must_have, preferred, occupation, essentials = st.columns(5)
+    total.metric("ATS score (fit)", f"{score['ats_score']} / 100")
+    essentials.metric("Essentials kept", f"{100 * score.get('essentials_kept', 1.0):.0f}%")
     must_have_coverage, preferred_coverage = score.get("must_have_coverage"), score.get("preferred_coverage")
-    must_have.metric("Must-haves covered", "—" if must_have_coverage is None else f"{100 * must_have_coverage:.0f}%")
-    preferred.metric("Preferred covered", "—" if preferred_coverage is None else f"{100 * preferred_coverage:.0f}%")
+    must_have.metric("Must-haves earned", "—" if must_have_coverage is None else f"{100 * must_have_coverage:.0f}%")
+    preferred.metric("Preferred earned", "—" if preferred_coverage is None else f"{100 * preferred_coverage:.0f}%")
     occupation.metric("Same occupation", f"{100 * score['same_occupation']:.0f}%")
-    st.caption("Score = (80% must-haves + 20% preferred) × same occupation. "
-               "More important lines count for more. Least covered lines are listed first.")
-    for title, lines in (("Must-have lines", score.get("must_have")), ("Preferred lines", score.get("preferred"))):
+    st.caption("Score = (80% must-haves + 20% preferred) × same occupation × essentials kept. More important lines count for more. "
+               "A tool the resume only lists as a skill, or never names, earns little however much related work is found.")
+    _show_findability(score)
+    for heading, lines in (("Must-have lines", score.get("must_have")), ("Preferred lines", score.get("preferred"))):
         if lines:
-            st.markdown(f"**{title}**")
+            st.markdown(f"**{heading}**")
             st.dataframe(_requirement_rows(lines), hide_index=True, use_container_width=True,
-                         column_config={"Covered": st.column_config.ProgressColumn(
-                             "Covered", format="%d%%", min_value=0, max_value=100)})
+                         column_config={"Credit": st.column_config.ProgressColumn(
+                             "Credit", format="%d%%", min_value=0, max_value=100)})
 
 
 def _ats_score_panel(resume_id: str):

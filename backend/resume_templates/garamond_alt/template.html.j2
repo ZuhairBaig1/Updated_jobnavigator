@@ -216,6 +216,8 @@ ul.bullets li::before {
   <div class="header">
     <div class="name-row">
       <h1>{{ header.name }}</h1>
+      {# The job title of the posting a copy was tailored for. Absent on a base resume. #}
+      {% if header.target_title %}<span class="title-text">{{ header.target_title }}</span>{% endif %}
       {% if header.title %}<span class="title-text">{{ header.title }}</span>{% endif %}
     </div>
     <div class="contact">

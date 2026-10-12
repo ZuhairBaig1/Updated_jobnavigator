@@ -147,7 +147,7 @@ SECTIONS = {"Mandatory Skills": "requirements", "Preferred Qualifications": "pre
 
 def _jev_sorting_skills(monkeypatch, headings=tuple(SECTIONS), sections=SECTIONS, places=None, coverage=None,
                         kinds=None, duty_headings=("Key Responsibilities",), occupation=5,
-                        importance=None):
+                        importance=None, categories=(), new_products=(), related_products=None, rejected_without=None):
     """A pretend Jev. `places` maps a line to (the place it picks, how sure it is); other lines stay put."""
     def quoted_line(question):
         parts = question["instructions"].split('"')
@@ -178,6 +178,19 @@ def _jev_sorting_skills(monkeypatch, headings=tuple(SECTIONS), sections=SECTIONS
                 answers[key] = {"choice": "belongs"}
             elif "Are those lines the duties" in asked:
                 answers[key] = {"choice": "duties" if line in duty_headings else "not_duties"}
+            elif asked.startswith("In this job posting, what is"):
+                known_to_the_dictionary = bool(line_match.keyword_match.skills_in(line))
+                is_a_product = known_to_the_dictionary or line in new_products
+                answers[key] = {"choice": "category" if line in categories else "product" if is_a_product else "neither"}
+            elif "Would a recruiter filling this job reject a candidate" in asked:
+                how_sure = (rejected_without or {}).get(line, 0.0)
+                answers[key] = {"choice": "yes" if how_sure >= 0.5 else "no",
+                                "probabilities": {"yes": how_sure, "no": 1.0 - how_sure}}
+            elif asked.startswith("Does the candidate's work experience name a specific product"):
+                tool = asked.split("a form of ")[1].split(",")[0]
+                how_sure = (related_products or {}).get(tool, 0.0)
+                answers[key] = {"choice": "yes" if how_sure >= 0.5 else "no",
+                                "probabilities": {"yes": how_sure, "no": 1.0 - how_sure}}
             elif "What kind of requirement" in asked:
                 answers[key] = {"choice": (kinds or {}).get(line, "skill")}
             elif "has these lines under it" in asked:
@@ -861,7 +874,7 @@ async def test_every_line_counts_the_same_in_the_ats_score(monkeypatch):
     # Coverage: Kubernetes all of it, the cloud line half, the certification none; Terraform a quarter.
     _jev_sorting_skills(monkeypatch, coverage={"Kubernetes": 4, "Cloud infrastructure (Azure preferred)": 2, "Terraform": 1})
 
-    result = await line_match.ats_score("jev", "Ran Kubernetes clusters.", SKILLS_POSTING)
+    result = await line_match.ats_score("jev", "Ran Kubernetes clusters on Azure with Terraform.", SKILLS_POSTING)
 
     assert result["must_have_coverage"] == 0.5
     assert result["preferred_coverage"] == 0.25
@@ -874,7 +887,7 @@ async def test_a_career_in_a_neighbouring_occupation_keeps_part_of_the_coverage_
     _jev_sorting_skills(monkeypatch, occupation=2,
                         coverage={"Kubernetes": 4, "Cloud infrastructure (Azure preferred)": 2, "Terraform": 1})
 
-    result = await line_match.ats_score("jev", "Built data pipelines; ran them on Kubernetes.", SKILLS_POSTING)
+    result = await line_match.ats_score("jev", "Built data pipelines; ran them on Kubernetes, Azure and Terraform.", SKILLS_POSTING)
 
     assert result["coverage_score"] == 45
     assert result["same_occupation"] == 0.4
@@ -899,16 +912,366 @@ def test_only_the_lower_occupation_levels_take_much_of_the_score_away():
 
 @pytest.mark.asyncio
 async def test_a_more_important_line_counts_for_more_in_the_ats_score(monkeypatch):
-    # Kubernetes is central (counts 4) and fully covered; the other two must-haves count 1 and are not covered.
+    # Kubernetes is central (counts 8) and fully covered; the other two must-haves count 1 and are not covered.
     _jev_sorting_skills(monkeypatch, coverage={"Kubernetes": 4}, importance={"Kubernetes": 3})
 
     result = await line_match.ats_score("jev", "Ran Kubernetes clusters.", SKILLS_POSTING)
 
     kubernetes = [row for row in result["must_have"] if row["line"] == "Kubernetes"][0]
-    assert kubernetes["importance"] == 4.0
-    assert result["must_have_coverage"] == pytest.approx(4 / 6)
+    assert kubernetes["importance"] == 8.0
+    assert result["must_have_coverage"] == pytest.approx(8 / 10)
 
 
 def test_importance_is_asked_about_the_posting_alone():
     assert "resume" not in line_match.IMPORTANCE_QUESTION.lower()
-    assert [counts_for for _description, counts_for in line_match.IMPORTANCE_LEVELS] == [1.0, 2.0, 3.0, 4.0]
+    assert [counts_for for _description, counts_for in line_match.IMPORTANCE_LEVELS] == [1.0, 2.0, 4.0, 8.0]
+
+
+# ── The title under the name, against the posting's job title ─────────────────
+
+def _jev_matching_titles(monkeypatch, level_of_title: dict) -> list:
+    """Jev puts each title on the level given for it, counted from 0 (a different job) to 3 (word for word)."""
+    asked = []
+
+    async def fake_ask(scorer, api_key, state, questions):
+        asked.append({"state": state, "questions": questions})
+        return {name: {"score": level_of_title[question["instructions"].split('"')[1]]}
+                for name, question in questions.items()}
+    monkeypatch.setattr(decision_scorer, "_find_api_key", lambda scorer: "key")
+    monkeypatch.setattr(line_match, "_ask", fake_ask)
+    return asked
+
+
+@pytest.mark.asyncio
+async def test_a_resume_with_no_title_is_reported_without_asking_jev(monkeypatch):
+    asked = _jev_matching_titles(monkeypatch, {})
+
+    title = await line_match.title_against_the_posting("jev", [], "Senior DevOps Engineer\nRequirements\n- Kubernetes")
+
+    assert title == {"present": False, "lines": [], "match": None, "best_line": ""}
+    assert asked == []
+
+
+@pytest.mark.asyncio
+async def test_the_best_matching_title_line_is_the_one_reported(monkeypatch):
+    asked = _jev_matching_titles(monkeypatch, {"Senior DevOps Engineer": 3, "Site Reliability Engineer": 2})
+
+    title = await line_match.title_against_the_posting(
+        "jev", ["Site Reliability Engineer", "Senior DevOps Engineer"], "Senior DevOps Engineer\nRequirements\n- Kubernetes")
+
+    assert title == {"present": True, "lines": ["Site Reliability Engineer", "Senior DevOps Engineer"],
+                     "match": 1.0, "best_line": "Senior DevOps Engineer"}
+    # Jev judges the title's wording against the posting alone, never against the résumé.
+    assert asked[0]["state"].startswith("Job posting:")
+
+
+@pytest.mark.asyncio
+async def test_a_title_for_a_different_job_matches_nothing(monkeypatch):
+    _jev_matching_titles(monkeypatch, {"Product Manager": 0})
+
+    title = await line_match.title_against_the_posting("jev", ["Product Manager"], "Senior DevOps Engineer")
+
+    assert title["present"] is True
+    assert title["match"] == 0.0
+
+
+# ── Where the evidence sits: a tool only listed earns little ──────────────────
+
+USED_IN_A_ROLE = "Jordan Lee\n## Experience\nDevOps Engineer at Acme\n- Ran Kubernetes clusters\n## Skills\nKubernetes, Terraform"
+ONLY_LISTED = "Jordan Lee\n## Experience\nDevOps Engineer at Acme\n- Ran clusters\n## Skills\nKubernetes"
+NEVER_NAMED = "Jordan Lee\n## Experience\nDevOps Engineer at Acme\n- Ran clusters\n## Skills\nLinux"
+
+
+def _kubernetes_row(result):
+    return [row for row in result["must_have"] if row["line"] == "Kubernetes"][0]
+
+
+@pytest.mark.asyncio
+async def test_a_tool_used_in_a_role_keeps_all_of_its_coverage(monkeypatch):
+    _jev_sorting_skills(monkeypatch, coverage={"Kubernetes": 4})
+
+    row = _kubernetes_row(await line_match.ats_score("jev", USED_IN_A_ROLE, SKILLS_POSTING))
+
+    assert row["tools"] == {"Kubernetes": "used_in_work"}
+    assert row["credit"] == row["covered"] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_a_tool_the_resume_only_lists_earns_no_more_than_the_listed_ceiling(monkeypatch):
+    # Jev calls Kubernetes fully covered, but the résumé names it only in the skills section.
+    _jev_sorting_skills(monkeypatch, coverage={"Kubernetes": 4})
+
+    row = _kubernetes_row(await line_match.ats_score("jev", ONLY_LISTED, SKILLS_POSTING))
+
+    assert row["covered"] == 1.0
+    assert row["tools"] == {"Kubernetes": "only_listed"}
+    assert row["credit"] == 0.4
+
+
+@pytest.mark.asyncio
+async def test_a_tool_the_resume_never_names_earns_least_whatever_jev_finds(monkeypatch):
+    _jev_sorting_skills(monkeypatch, coverage={"Kubernetes": 3})
+
+    row = _kubernetes_row(await line_match.ats_score("jev", NEVER_NAMED, SKILLS_POSTING))
+
+    assert row["covered"] == 0.75
+    assert row["tools"] == {"Kubernetes": "not_named"}
+    assert row["credit"] == 0.25
+
+
+@pytest.mark.asyncio
+async def test_the_ceiling_never_raises_a_line_above_its_coverage(monkeypatch):
+    _jev_sorting_skills(monkeypatch, coverage={"Kubernetes": 2})
+
+    row = _kubernetes_row(await line_match.ats_score("jev", USED_IN_A_ROLE, SKILLS_POSTING))
+
+    assert row["credit"] == row["covered"] == 0.5
+
+
+def test_a_line_naming_several_tools_can_earn_the_average_of_them():
+    evidence = line_match.evidence_of_each_line(USED_IN_A_ROLE, ["Hands-on expertise with Kubernetes, Docker and Terraform"])[0]
+
+    assert evidence["tools"] == {"Docker": "not_named", "Kubernetes": "used_in_work", "Terraform": "only_listed"}
+    assert evidence["ceiling"] == round((1.0 + 0.25 + 0.4) / 3, 2)
+
+
+def test_a_line_offering_a_choice_needs_only_one_of_its_tools():
+    assert line_match.evidence_of_each_line(USED_IN_A_ROLE, ["Docker or Kubernetes"])[0]["ceiling"] == 1.0
+    assert line_match.evidence_of_each_line(USED_IN_A_ROLE, ["Docker or Terraform"])[0]["ceiling"] == 0.4
+    assert line_match.evidence_of_each_line(USED_IN_A_ROLE, ["Docker or Datadog"])[0]["ceiling"] == 0.25
+
+
+def test_a_line_whose_tools_are_only_examples_is_held_back_only_a_little():
+    """"Such as Datadog, Grafana, or similar" may be met by a tool the line never names."""
+    lines = ["Knowledge of monitoring tools such as Datadog, Grafana, or similar solutions"]
+
+    assert line_match.evidence_of_each_line(USED_IN_A_ROLE, lines)[0]["ceiling"] == 0.75
+    assert line_match.evidence_of_each_line(USED_IN_A_ROLE, [lines[0].replace("Grafana", "Kubernetes")])[0]["ceiling"] == 1.0
+
+
+def test_a_category_is_left_to_jev_and_never_held_back():
+    line = ["Strong understanding of Infrastructure as Code tools"]
+
+    assert line_match.evidence_of_each_line(NEVER_NAMED, line)[0]["ceiling"] == 0.25
+    left_to_jev = line_match.evidence_of_each_line(NEVER_NAMED, line, {"Infrastructure as Code"})[0]
+    assert (left_to_jev["ceiling"], left_to_jev["tools"]) == (1.0, {})
+    assert left_to_jev["names_a_skill"] is True   # a category is still a skill the line names
+
+
+@pytest.mark.asyncio
+async def test_jev_says_which_names_are_categories_and_those_lines_keep_their_coverage(monkeypatch):
+    _jev_sorting_skills(monkeypatch, coverage={"Kubernetes": 4}, categories={"Kubernetes"})
+
+    row = _kubernetes_row(await line_match.ats_score("jev", NEVER_NAMED, SKILLS_POSTING))
+
+    assert row["tools"] == {}
+    assert row["credit"] == row["covered"] == 1.0
+
+
+def test_a_line_naming_no_tool_is_not_held_back():
+    lines = ["Bachelors degree in Computer Science", "5+ years of experience"]
+
+    assert [evidence["ceiling"] for evidence in line_match.evidence_of_each_line(NEVER_NAMED, lines)] == [1.0, 1.0]
+
+
+def test_resume_text_without_section_headings_is_all_read_as_work():
+    evidence = line_match.evidence_of_each_line("Ran Kubernetes clusters at Acme.", ["Kubernetes"])[0]
+
+    assert evidence["tools"] == {"Kubernetes": "used_in_work"}
+
+
+def test_a_sentence_does_not_end_at_an_abbreviation():
+    line = "Proficiency in at least one high-level programming language (e.g. Clojure, TypeScript, Python) is expected of every engineer on the team, without exception."
+
+    assert line_match._split_paragraph(line) == [line]
+
+
+@pytest.mark.asyncio
+async def test_findability_is_reported_beside_the_score_and_does_not_change_it(monkeypatch):
+    _jev_sorting_skills(monkeypatch, coverage={"Kubernetes": 4})
+
+    named = await line_match.ats_score("jev", "Ran Kubernetes clusters with Terraform.", SKILLS_POSTING)
+    unnamed = await line_match.ats_score("jev", "Ran clusters.", SKILLS_POSTING)
+
+    assert "Kubernetes" in named["findability"]["matched_keywords"]
+    assert "Kubernetes" in unnamed["findability"]["missing_keywords"]
+    assert named["findability"]["title_present"] is False
+
+
+@pytest.mark.asyncio
+async def test_the_title_changes_findability_and_never_the_score(monkeypatch):
+    _jev_sorting_skills(monkeypatch, coverage={"Kubernetes": 4})
+
+    without_a_title = await line_match.ats_score("jev", USED_IN_A_ROLE, SKILLS_POSTING)
+    with_a_title = await line_match.ats_score("jev", USED_IN_A_ROLE, SKILLS_POSTING, ["DevOps Engineer"])
+
+    assert with_a_title["findability"]["title_present"] is True
+    assert with_a_title["ats_score"] == without_a_title["ats_score"]
+
+
+# ── What the skills dictionary does not know, Jev fills in ────────────────────
+
+def test_names_the_dictionary_does_not_know_are_found_once_each():
+    lines = ["Experience with Karpenter and OpenTofu", "Strong hands-on Kubernetes skills", "OpenTofu modules", "Trivy"]
+
+    assert line_match.names_the_dictionary_does_not_know(lines) == ["Karpenter", "OpenTofu", "Trivy"]
+
+
+def test_a_new_product_is_looked_for_word_for_word():
+    used = "Jordan\n## Experience\n- Scaled nodes with Karpenter\n## Skills\nLinux"
+    listed = "Jordan\n## Experience\n- Scaled nodes\n## Skills\nKarpenter"
+    line = ["Experience with Karpenter"]
+
+    assert line_match.evidence_of_each_line(used, line, new_products={"Karpenter"})[0]["tools"] == {"Karpenter": "used_in_work"}
+    assert line_match.evidence_of_each_line(listed, line, new_products={"Karpenter"})[0]["ceiling"] == 0.4
+    assert line_match.evidence_of_each_line(NEVER_NAMED, line, new_products={"Karpenter"})[0]["ceiling"] == 0.25
+    # A name Jev did not call a product is no tool at all, and holds nothing back.
+    assert line_match.evidence_of_each_line(NEVER_NAMED, line)[0] == {"ceiling": 1.0, "tools": {}, "names_a_skill": False}
+
+
+@pytest.mark.asyncio
+async def test_a_name_jev_is_sure_is_a_product_holds_its_line_back_when_the_resume_lacks_it(monkeypatch):
+    posting = SKILLS_POSTING.replace("- Kubernetes", "- Karpenter")
+    _jev_sorting_skills(monkeypatch, coverage={"Karpenter": 4}, new_products={"Karpenter"})
+
+    result = await line_match.ats_score("jev", NEVER_NAMED, posting)
+
+    row = [row for row in result["must_have"] if row["line"] == "Karpenter"][0]
+    assert row["tools"] == {"Karpenter": "not_named"}
+    assert row["credit"] == 0.25
+
+
+@pytest.mark.asyncio
+async def test_a_tool_shown_under_a_related_products_name_is_not_held_back(monkeypatch):
+    """EKS is Kubernetes: the résumé never writes the word, and the line still earns its coverage."""
+    _jev_sorting_skills(monkeypatch, coverage={"Kubernetes": 4}, related_products={"Kubernetes": 0.96})
+
+    row = _kubernetes_row(await line_match.ats_score("jev", NEVER_NAMED, SKILLS_POSTING))
+
+    assert row["tools"] == {"Kubernetes": "shown_by_a_related_product"}
+    assert row["credit"] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_a_related_product_jev_is_not_sure_of_leaves_the_tool_held_back(monkeypatch):
+    _jev_sorting_skills(monkeypatch, coverage={"Kubernetes": 4}, related_products={"Kubernetes": 0.55})
+
+    row = _kubernetes_row(await line_match.ats_score("jev", NEVER_NAMED, SKILLS_POSTING))
+
+    assert row["tools"] == {"Kubernetes": "not_named"}
+    assert row["credit"] == 0.25
+
+
+@pytest.mark.asyncio
+async def test_a_tool_used_in_the_work_is_never_asked_about_related_products(monkeypatch):
+    _jev_sorting_skills(monkeypatch, coverage={"Kubernetes": 4}, related_products={"Kubernetes": 0.99})
+
+    row = _kubernetes_row(await line_match.ats_score("jev", USED_IN_A_ROLE, SKILLS_POSTING))
+
+    assert row["tools"] == {"Kubernetes": "used_in_work"}
+
+
+def test_a_label_before_a_colon_is_never_taken_for_a_product():
+    assert line_match.names_the_dictionary_does_not_know(["Secondary: Terraform,Ansible", "Tools: Karpenter"]) == ["Karpenter"]
+
+
+# ── The essentials: one missing essential scales the whole score ──────────────
+
+def test_an_essential_shown_well_costs_nothing():
+    rows = [{"line": "Kubernetes", "credit": 0.7, "essential": 1.0, "tools": {}},
+            {"line": "Docker", "credit": 1.0, "essential": 1.0, "tools": {}}]
+
+    assert line_match._share_kept_for_the_essentials(rows) == 1.0
+    assert line_match._missing_essentials(rows) == []
+
+
+def test_an_essential_not_shown_at_all_takes_half_the_score():
+    rows = [{"line": "Kubernetes", "credit": 0.0, "essential": 1.0, "tools": {"Kubernetes": "not_named"}}]
+
+    assert line_match._share_kept_for_the_essentials(rows) == 0.5
+    assert line_match._missing_essentials(rows)[0]["tools_not_shown"] == ["Kubernetes"]
+
+
+def test_two_missing_essentials_cost_more_than_one():
+    one = [{"line": "Kubernetes", "credit": 0.0, "essential": 1.0, "tools": {}}]
+    two = one + [{"line": "Docker", "credit": 0.0, "essential": 1.0, "tools": {}}]
+
+    assert line_match._share_kept_for_the_essentials(two) == 0.25 < line_match._share_kept_for_the_essentials(one)
+
+
+def test_a_line_that_is_only_wanted_costs_nothing_however_poorly_it_is_shown():
+    rows = [{"line": "Grafana", "credit": 0.0, "essential": 0.0, "tools": {}}]
+
+    assert line_match._share_kept_for_the_essentials(rows) == 1.0
+
+
+def test_how_essential_a_line_is_rises_evenly_and_signs_add_to_it():
+    central = 8.0
+    assert line_match._how_essential(0.5, central, signs=0) == 0.0
+    assert line_match._how_essential(0.7, central, signs=0) == 0.5
+    assert line_match._how_essential(0.9, central, signs=0) == 1.0
+    assert line_match._how_essential(0.55, central, signs=1) == 0.5      # one sign is worth 0.15 of sureness
+
+
+def test_a_line_jev_does_not_rate_above_important_is_never_an_essential():
+    """Jev says "reject" to most lines of a posting, so its importance rating has to agree."""
+    assert line_match._how_essential(1.0, 4.0, signs=3) == 0.0
+    assert line_match._how_essential(1.0, 5.0, signs=0) == 0.5
+    assert line_match._how_essential(1.0, 6.0, signs=0) == 1.0
+
+
+def test_only_the_strongest_few_essentials_of_a_posting_count():
+    rows = [{"line": str(number), "essential": strength} for number, strength in enumerate([0.9, 0.2, 1.0, 0.6, 0.7])]
+
+    line_match._keep_only_the_strongest_essentials(rows)
+
+    assert [row["essential"] for row in rows] == [0.9, 0.0, 1.0, 0.0, 0.7]
+
+
+def test_the_signs_of_an_essential_are_counted_from_the_posting():
+    posting = "Senior Kubernetes Engineer\nMust have Kubernetes.\nKubernetes clusters at scale.\nNice: Grafana."
+
+    assert line_match._signs_a_line_is_essential("Must have Kubernetes", posting, "Senior Kubernetes Engineer") == 3
+    assert line_match._signs_a_line_is_essential("Grafana", posting) == 0
+
+
+@pytest.mark.asyncio
+async def test_a_missing_essential_scales_the_whole_score_down(monkeypatch):
+    covered = {"Kubernetes": 4, "Cloud infrastructure (Azure preferred)": 4, "AWS certification is an advantage": 4, "Terraform": 4}
+    _jev_sorting_skills(monkeypatch, coverage=covered, importance={"Kubernetes": 3})
+    without_essentials = await line_match.ats_score("jev", NEVER_NAMED, SKILLS_POSTING)
+    _jev_sorting_skills(monkeypatch, coverage=covered, rejected_without={"Kubernetes": 0.95}, importance={"Kubernetes": 3})
+    with_an_essential = await line_match.ats_score("jev", NEVER_NAMED, SKILLS_POSTING)
+
+    assert without_essentials["essentials_kept"] == 1.0
+    assert with_an_essential["missing_essentials"][0]["line"] == "Kubernetes"
+    assert with_an_essential["essentials_kept"] < 0.75
+    assert with_an_essential["ats_score"] == round(without_essentials["ats_score"] * with_an_essential["essentials_kept"])
+
+
+@pytest.mark.asyncio
+async def test_a_preferred_line_is_never_an_essential(monkeypatch):
+    _jev_sorting_skills(monkeypatch, coverage={"Kubernetes": 4}, rejected_without={"Terraform": 0.99})
+
+    result = await line_match.ats_score("jev", USED_IN_A_ROLE, SKILLS_POSTING)
+
+    assert [row["essential"] for row in result["preferred"]] == [0.0]
+
+
+@pytest.mark.asyncio
+async def test_a_broad_skill_line_counts_for_half_its_weight(monkeypatch):
+    posting = SKILLS_POSTING.replace("- AWS certification is an advantage", "- Proven record of delivering reliable systems")
+    _jev_sorting_skills(monkeypatch, coverage={"Kubernetes": 4})
+
+    result = await line_match.ats_score("jev", USED_IN_A_ROLE, posting)
+
+    weights = {row["line"]: row["importance"] for row in result["must_have"]}
+    assert weights["Proven record of delivering reliable systems"] == 0.5
+    assert weights["Kubernetes"] == 1.0
+
+
+def test_a_degree_or_a_number_of_years_is_not_a_broad_line():
+    assert line_match._is_a_broad_line("Proven experience in DevOps or Software Engineering", "experience", False) is True
+    assert line_match._is_a_broad_line("8+ years of experience in the field", "experience", False) is False
+    assert line_match._is_a_broad_line("Bachelors degree", "qualification", False) is False
+    assert line_match._is_a_broad_line("Hands-on expertise with Kubernetes", "skill", True) is False

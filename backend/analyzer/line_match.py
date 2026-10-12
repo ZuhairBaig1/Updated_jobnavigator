@@ -29,7 +29,8 @@ logger = logging.getLogger("jobnavigator.line_match")
 BULLET_MARKS = "-•*+●◦▪· \t"
 # A line longer than this is a paragraph, and is cut into its sentences.
 PARAGRAPH_CHARS = 160
-END_OF_SENTENCE = re.compile(r"(?<=[.!?;])\s+(?=[A-Z])")
+# "e.g." and "i.e." do not end a sentence: "(e.g. Clojure, TypeScript, Python)" stays in its line.
+END_OF_SENTENCE = re.compile(r"(?<=[.!?;])(?<!\be\.g\.)(?<!\bi\.e\.)\s+(?=[A-Z])")
 MOST_LINES_JUDGED = 200
 
 
@@ -918,25 +919,35 @@ def _average_coverage(lines_with_coverage: list):
 # ── The ATS score ─────────────────────────────────────────────────────────────
 #
 # Jev judges three things: how much of each requirement the résumé covers, how important each requirement is
-# to the job, and whether the candidate's career is in the occupation the posting is for. The rest is arithmetic:
-#     W = how much a line counts, from 1 (a formality) to 4 (what the job is mainly about)
-#     M = the coverage of the must-have lines, averaged by W
-#     P = the coverage of the preferred lines, averaged by W
+# to the job, and whether the candidate's career is in the occupation the posting is for. Code checks where
+# the résumé names each tool a line asks for. The rest is arithmetic:
+#     credit = a line's coverage, held under a ceiling set by its evidence (a tool only listed earns little)
+#     W = how much a line counts, from 1 (a formality) to 8 (what the job is mainly about)
+#     M = the credit of the must-have lines, averaged by W
+#     P = the credit of the preferred lines, averaged by W
 #     coverage = 0.8 x M + 0.2 x P
-#     ATS = 100 x coverage x the share kept for the occupation
+#     ATS = 100 x coverage x the share kept for the occupation x the share kept for the essentials
 # A posting with no preferred lines is scored on its must-haves alone, and the other way round.
 #
 # Without the occupation step, a data engineer who has used the same tools scores close to a DevOps engineer.
+# Without the evidence ceiling, listing a tool in the skills section scores almost like having worked with it.
+#
+# The score says how well the candidate fits. Whether a recruiter's search would find the résumé is a
+# separate matter, reported beside it as "findability": the posting's keywords the résumé names, and the title.
+
+YES_ANSWER, NO_ANSWER = "yes", "no"
 
 SHARE_OF_MUST_HAVES_IN_THE_ATS_SCORE = 0.8
 SHARE_OF_PREFERRED_IN_THE_ATS_SCORE = 0.2
 
 # How much a requirement line counts, judged from the posting alone. A degree counts less than the job's main skill.
+# Each level counts double the one below: with twenty lines in a posting, a gentler scale let a résumé lose
+# the job's central skill and keep all but two points.
 IMPORTANCE_LEVELS = [
     ("A formality or a general trait, such as a degree, a soft skill or a way of working", 1.0),
     ("A supporting skill: useful in the job, but not what the job is mainly about", 2.0),
-    ("An important skill for the job's main work", 3.0),
-    ("Central: the job is mainly about this", 4.0),
+    ("An important skill for the job's main work", 4.0),
+    ("Central: the job is mainly about this", 8.0),
 ]
 IMPORTANCE_QUESTION = (
     'The job posting asks for this: "{line}". How important is it to this job, going by the whole posting?')
@@ -961,12 +972,19 @@ OCCUPATION_QUESTION = (
     "Think of how much of the job's main work the candidate would have to learn from scratch.")
 
 
-async def ats_score(scorer: str, resume_text: str, job_text: str) -> dict | None:
+async def ats_score(scorer: str, resume_text: str, job_text: str, title_lines: list = (),
+                    job_title: str = "") -> dict | None:
     """The ATS score out of 100, with the coverage and importance of each must-have and preferred line behind it.
 
-    Returns {"ats_score", "coverage_score", "same_occupation", "must_have_coverage", "preferred_coverage",
-    "must_have": [rows], "preferred": [rows], "found_from"}. A row is {"line", "covered", "importance", ...}.
-    The coverage score is the score before the occupation step. Both scores are None when the posting gave
+    title_lines are the lines the résumé prints under the name. They are checked against the posting's job title
+    and reported under "title" and "findability"; the ATS score itself is not changed by them.
+
+    Returns {"ats_score", "coverage_score", "same_occupation", "essentials_kept", "missing_essentials",
+    "must_have_coverage", "preferred_coverage", "must_have": [rows], "preferred": [rows], "found_from", "title",
+    "findability"}.
+    A row is {"line", "covered", "evidence", "tools", "credit", "importance", "essential", ...}: credit is what
+    the line earns, and essential runs from 0 (wanted) to 1 (the job cannot be done without it).
+    The coverage score is the score before the occupation and essentials steps. Both scores are None when the posting gave
     no lines. Returns None when Jev cannot be asked.
     """
     coverage = await resume_against_the_posting(scorer, resume_text, job_text)
@@ -974,23 +992,391 @@ async def ats_score(scorer: str, resume_text: str, job_text: str) -> dict | None
         return None
     rows = coverage["must_have"] + coverage["preferred"]
     try:
-        importance, same_occupation = await asyncio.gather(
-            _how_important_each_line_is(scorer, job_text, [row["line"] for row in rows]),
-            _share_kept_for_the_occupation(scorer, resume_text, job_text))
+        lines = [row["line"] for row in rows]
+        api_key = decision_scorer._find_api_key(scorer)
+        importance, same_occupation, title, evidence_of_lines, kinds, rejected_without = await asyncio.gather(
+            _how_important_each_line_is(scorer, job_text, lines),
+            _share_kept_for_the_occupation(scorer, resume_text, job_text),
+            title_against_the_posting(scorer, title_lines, job_text),
+            evidence_of_each_line_with_jev(scorer, resume_text, job_text, lines),
+            _kind_of_each_line(scorer, api_key, job_text, lines),
+            _how_sure_a_recruiter_rejects_without_each_line(scorer, api_key, job_text, lines))
     except Exception as error:
-        logger.warning(f"The importance or the occupation could not be judged ({type(error).__name__}: {error})")
+        logger.warning(f"The importance, evidence or occupation could not be judged ({type(error).__name__}: {error})")
         return None
-    for row, how_important in zip(rows, importance):
-        row["importance"] = round(how_important, 2)
+    must_have_lines = len(coverage["must_have"])
+    for number, row in enumerate(rows):
+        evidence = evidence_of_lines[number]
+        is_a_broad_line = _is_a_broad_line(row["line"], kinds[number], evidence["names_a_skill"])
+        row["importance"] = round(importance[number] * (SHARE_OF_WEIGHT_A_BROAD_LINE_KEEPS if is_a_broad_line else 1), 2)
+        row["evidence"] = evidence["ceiling"]
+        row["tools"] = evidence["tools"]
+        row["credit"] = round(min(row["covered"], evidence["ceiling"]), 2)
+        can_be_essential = number < must_have_lines and evidence["names_a_skill"]
+        row["essential"] = _how_essential(rejected_without[number], importance[number],
+                                          _signs_a_line_is_essential(row["line"], job_text, job_title)) \
+            if can_be_essential else 0.0
+    _keep_only_the_strongest_essentials(coverage["must_have"])
 
     must_have_coverage = _coverage_averaged_by_importance(coverage["must_have"])
     preferred_coverage = _coverage_averaged_by_importance(coverage["preferred"])
     coverage_score = _coverage_score_out_of_100(must_have_coverage, preferred_coverage)
-    ats = None if coverage_score is None else round(coverage_score * same_occupation)
+    essentials_kept = _share_kept_for_the_essentials(coverage["must_have"])
+    ats = None if coverage_score is None else round(coverage_score * same_occupation * essentials_kept)
     return {"ats_score": ats, "coverage_score": coverage_score, "same_occupation": round(same_occupation, 2),
+            "essentials_kept": round(essentials_kept, 2),
+            "missing_essentials": _missing_essentials(coverage["must_have"]),
             "must_have_coverage": must_have_coverage, "preferred_coverage": preferred_coverage,
             "must_have": coverage["must_have"], "preferred": coverage["preferred"],
-            "found_from": coverage["found_from"]}
+            "found_from": coverage["found_from"], "title": title,
+            "findability": _findability(resume_text, job_text, title)}
+
+
+# ── The essentials: what the job cannot be done without ───────────────────────
+#
+# An average cannot be sunk by one line: with twenty lines in a posting, the job's main skill holds a tenth
+# of the score at most. A recruiter does not average, and turns a candidate down for one missing essential.
+# So the essentials scale the whole score, the way the occupation does:
+#     - Jev says, line by line, whether a recruiter would reject a candidate who lacks it.
+#     - Signs the code can count make that surer: the skill is in the job title, the posting names it more
+#       than once, or the line says "must", "required" or "hands-on".
+#     - Asked on its own, Jev says "reject" to most lines of a real posting (14 of 19 on one), which sank a
+#       DevOps résumé from 81 to 22 over MongoDB. So a line must also be one Jev rated above "important" for
+#       the job's main work, and only the few strongest essentials of a posting count.
+#     - An essential shown well costs nothing. One shown poorly takes away up to half the score, and two
+#       poorly shown essentials take away more.
+# Only a must-have line that names a skill can be an essential. Whether the candidate is in the right field
+# at all is the occupation step's question, and charging for it here would charge twice.
+#
+# A broad line that names no skill ("Proven experience in DevOps") also counts for half its weight in the
+# average, for the same reason: it had been outweighing the specific skills the job is built on. A degree,
+# a certification or a stated number of years is specific in its own way, and keeps its weight.
+REJECT_QUESTION = (
+    'The job posting asks for this: "{line}". Would a recruiter filling this job reject a candidate who '
+    "clearly lacks it, however strong the rest of the resume is?")
+REJECT_OR_NOT = {YES_ANSWER: "Yes: the job cannot be done without it",
+                 NO_ANSWER: "No: it is wanted, but a candidate without it could still be hired"}
+SAYS_IT_CANNOT_BE_DONE_WITHOUT = re.compile(
+    r"\b(must|required|mandatory|essential|hands-on|expertise|expert|strong experience)\b", re.IGNORECASE)
+TIMES_NAMED_THAT_SHOW_A_SKILL_MATTERS = 2
+EACH_SIGN_ADDS = 0.15
+# How sure it has to be before a line counts as an essential at all, and at what point it counts fully.
+LEAST_SURE_AN_ESSENTIAL_IS = 0.5
+FULLY_SURE_AN_ESSENTIAL_IS = 0.9
+# On the importance scale, 4 is "important for the job's main work" and 8 is "the job is mainly about this".
+IMPORTANCE_BELOW_WHICH_NOTHING_IS_ESSENTIAL = 4.0
+IMPORTANCE_OF_A_FULL_ESSENTIAL = 6.0
+MOST_ESSENTIALS_OF_A_POSTING = 3
+# An essential with this much credit or more is shown well enough, and costs nothing.
+CREDIT_THAT_SHOWS_AN_ESSENTIAL = 0.7
+MOST_ONE_ESSENTIAL_CAN_COST = 0.5
+SHARE_OF_WEIGHT_A_BROAD_LINE_KEEPS = 0.5
+
+
+async def _how_sure_a_recruiter_rejects_without_each_line(scorer: str, api_key: str, job_text: str, lines: list) -> list:
+    """For every line, in order: how sure Jev is, from 0 to 1, that lacking it gets a candidate turned down."""
+    if not lines:
+        return []
+    questions = {f"x{number}": {"type": "choice", "instructions": REJECT_QUESTION.format(line=_quoted(line)),
+                                "criteria": REJECT_OR_NOT}
+                 for number, line in enumerate(lines)}
+    answers = await _ask(scorer, api_key, _posting_state(job_text), questions)
+    return [_how_sure(answers[f"x{number}"], YES_ANSWER) for number in range(len(lines))]
+
+
+A_NUMBER_OF_YEARS = re.compile(r"\d+\s*\+?\s*(?:-\s*\d+\s*)?(?:years?|yrs?)\b", re.IGNORECASE)
+
+
+def _is_a_broad_line(line: str, kind: str, names_a_skill: bool) -> bool:
+    """A line that asks for no skill by name, no credential and no number of years."""
+    return not names_a_skill and kind != A_QUALIFICATION and not A_NUMBER_OF_YEARS.search(line)
+
+
+def _signs_a_line_is_essential(line: str, job_text: str, job_title: str = "") -> int:
+    """How many countable signs say this line is an essential: its wording, its skills in the title, its skills repeated."""
+    skills = _tools_named_in(line)
+    named_in_the_posting = keyword_match.skills_in(posting_as_plain_text(job_text))
+    is_repeated = any(named_in_the_posting.get(skill, {}).get("count", 0) >= TIMES_NAMED_THAT_SHOW_A_SKILL_MATTERS
+                      for skill in skills)
+    is_in_the_title = bool(skills & set(keyword_match.skills_in(job_title or "")))
+    return int(bool(SAYS_IT_CANNOT_BE_DONE_WITHOUT.search(line))) + int(is_repeated) + int(is_in_the_title)
+
+
+def _how_essential(how_sure_of_rejection: float, how_important: float, signs: int) -> float:
+    """From 0 (not an essential) to 1 (fully one), rising evenly so a line near the edge does not swing the score."""
+    sure = how_sure_of_rejection + EACH_SIGN_ADDS * signs
+    from_rejection = _share_of_the_way(sure, LEAST_SURE_AN_ESSENTIAL_IS, FULLY_SURE_AN_ESSENTIAL_IS)
+    from_importance = _share_of_the_way(how_important, IMPORTANCE_BELOW_WHICH_NOTHING_IS_ESSENTIAL,
+                                        IMPORTANCE_OF_A_FULL_ESSENTIAL)
+    return round(from_rejection * from_importance, 2)
+
+
+def _share_of_the_way(value: float, start: float, end: float) -> float:
+    return max(0.0, min(1.0, (value - start) / (end - start)))
+
+
+def _keep_only_the_strongest_essentials(must_have_rows: list) -> None:
+    """A job has a few things it cannot be done without, not a dozen: all but the strongest stop being essentials."""
+    strongest = sorted(must_have_rows, key=lambda row: -row["essential"])[:MOST_ESSENTIALS_OF_A_POSTING]
+    for row in must_have_rows:
+        if not any(row is kept for kept in strongest):
+            row["essential"] = 0.0
+
+
+def _how_poorly_shown(credit: float) -> float:
+    """From 0 (shown well enough) to 1 (not shown at all)."""
+    return max(0.0, (CREDIT_THAT_SHOWS_AN_ESSENTIAL - credit) / CREDIT_THAT_SHOWS_AN_ESSENTIAL)
+
+
+def _share_kept_for_the_essentials(must_have_rows: list) -> float:
+    """From 0 to 1: the share of the score left once every poorly shown essential has taken its part."""
+    kept = 1.0
+    for row in must_have_rows:
+        kept *= 1 - MOST_ONE_ESSENTIAL_CAN_COST * row["essential"] * _how_poorly_shown(row["credit"])
+    return kept
+
+
+def _missing_essentials(must_have_rows: list) -> list:
+    """The essentials that cost the résumé part of its score, the costliest first, in words a person can act on."""
+    missing = [{"line": row["line"], "credit": row["credit"], "essential": row["essential"],
+                "cost": round(MOST_ONE_ESSENTIAL_CAN_COST * row["essential"] * _how_poorly_shown(row["credit"]), 2),
+                "tools_not_shown": [tool for tool, where in row["tools"].items() if where in (ONLY_LISTED, NOT_NAMED)]}
+               for row in must_have_rows]
+    return sorted([row for row in missing if row["cost"] > 0], key=lambda row: -row["cost"])
+
+
+# ── Where the evidence for a requirement sits ─────────────────────────────────
+#
+# Anyone can add a posting's words to a skills list, so a tool the résumé only lists earns little, and a
+# tool it never names earns less, however much related work Jev finds. This is checked in code, by where
+# each named tool appears: Jev was asked first, and still called Kubernetes "used" on a résumé with every
+# mention of it taken out.
+#
+# Each value is the most a line can earn for that tool. A line that names several tools takes their average;
+# one that offers a choice ("AWS or Azure") takes its best tool. A line whose tools are only examples
+# ("such as Datadog, Grafana, or similar") may be met by a tool it does not name, so it is held back only
+# a little when none of its examples is used in the work.
+# A line that names no tool, such as a degree or years of experience, is not held back at all. Neither is a
+# category ("Infrastructure as Code", "CI/CD"): a category is shown by using any tool of that kind, which
+# only Jev can judge.
+#
+# The skills dictionary is where the tool names come from, and it has two gaps that Jev fills:
+#   - a tool it has never heard of (Karpenter, OpenTofu). Jev is shown the capitalised names the dictionary
+#     does not know and says which are products; those are then looked for in the résumé word for word.
+#   - a product that is a form of another (EKS is Kubernetes). Before a tool is held back, Jev is asked
+#     whether the work names such a product. Vague work ("ran clusters") names none, and stays held back.
+USED_IN_WORK, SHOWN_BY_A_RELATED_PRODUCT = "used_in_work", "shown_by_a_related_product"
+ONLY_LISTED, NOT_NAMED = "only_listed", "not_named"
+MOST_A_TOOL_CAN_EARN = {USED_IN_WORK: 1.0, SHOWN_BY_A_RELATED_PRODUCT: 1.0, ONLY_LISTED: 0.4, NOT_NAMED: 0.25}
+FULL_CREDIT_ALLOWED = 1.0
+MOST_WHEN_NO_EXAMPLE_IS_USED = 0.75
+OFFERS_A_CHOICE = re.compile(r"\b(or|at least one|one of|any of)\b", re.IGNORECASE)
+NAMES_ONLY_EXAMPLES = re.compile(
+    r"\b(such as|e\.g|for example|for instance|like|similar|equivalent|etc)\b", re.IGNORECASE)
+
+A_PRODUCT, A_CATEGORY, NEITHER = "product", "category", "neither"
+PRODUCT_OR_CATEGORY = {
+    A_PRODUCT: "A specific named product, language, platform or technology, such as Docker, Python or AWS",
+    A_CATEGORY: "A category, practice or kind of tool, such as monitoring, version control or automation",
+    NEITHER: "Neither: a company, a place, a degree, a job, a field of study or an ordinary word",
+}
+PRODUCT_OR_CATEGORY_QUESTION = 'In this job posting, what is "{tool}"?'
+# A name the dictionary does not know is checked as a tool only when Jev is this sure it is a product:
+# calling an ordinary word a product would hold a line back for a "tool" no résumé could name.
+SURE_ENOUGH_A_NEW_NAME_IS_A_PRODUCT = 0.9
+MOST_NEW_NAMES_ASKED_ABOUT = 40
+MOST_WORDS_IN_A_LIST_ITEM = 3
+A_CAPITALISED_NAME = re.compile(r"(?<![A-Za-z0-9])[A-Z][A-Za-z0-9+#]*(?:[.-][A-Za-z0-9+#]+)*")
+HAS_A_CAPITAL_OR_DIGIT_INSIDE = re.compile(r".[A-Z0-9]")
+
+YES, NO = YES_ANSWER, NO_ANSWER
+YES_OR_NO = {YES: "Yes: the work experience names such a product", NO: "No: it names no such product"}
+RELATED_PRODUCT_QUESTION = (
+    "Does the candidate's work experience name a specific product or service that is itself a form of {tool}, "
+    "or is built on {tool}, so that using it means using {tool}? "
+    "A different product that only does a similar job does not count, and neither does work described "
+    "without naming any product.")
+# Tried on 25 cases twice over: every right "yes" came back at 0.71 or more, every wrong one at 0.57 or less.
+SURE_ENOUGH_OF_A_RELATED_PRODUCT = 0.65
+
+# The sections of the résumé text where work is described, as cv_scorer writes their headings.
+HEADING_OF_THE_RESUME_TEXT = re.compile(r"^## (.+)$", re.MULTILINE)
+WORK_SECTIONS = ("experience", "projects")
+
+
+async def evidence_of_each_line_with_jev(scorer: str, resume_text: str, job_text: str, lines: list) -> list:
+    """evidence_of_each_line, with Jev filling the dictionary's gaps: new products, categories, related products."""
+    api_key = decision_scorer._find_api_key(scorer)
+    categories, new_products = await _categories_and_new_products(scorer, api_key, job_text, lines)
+    first_look = evidence_of_each_line(resume_text, lines, categories, new_products)
+    held_back = sorted({tool for evidence in first_look for tool, where in evidence["tools"].items()
+                        if where in (ONLY_LISTED, NOT_NAMED)})
+    related = await _tools_shown_by_a_related_product(scorer, api_key, resume_text, held_back)
+    return evidence_of_each_line(resume_text, lines, categories, new_products, related)
+
+
+def evidence_of_each_line(resume_text: str, lines: list, categories: set = frozenset(),
+                          new_products: set = frozenset(), shown_by_a_related_product: set = frozenset()) -> list:
+    """For every line, in order: {"ceiling", "tools"}. tools gives where the résumé names each tool the line names."""
+    work = _work_part_of(resume_text)
+    tools_in_the_work = set(keyword_match.skills_in(work))
+    tools_anywhere = set(keyword_match.skills_in(resume_text))
+    evidence = []
+    for line in lines:
+        where = {tool: _where_the_resume_names(tool, tools_in_the_work, tools_anywhere)
+                 for tool in _tools_named_in(line) - set(categories)}
+        for name in new_products:
+            if _names(line, name):
+                where[name] = USED_IN_WORK if _names(work, name) else ONLY_LISTED if _names(resume_text, name) else NOT_NAMED
+        for tool in where:
+            if where[tool] != USED_IN_WORK and tool in shown_by_a_related_product:
+                where[tool] = SHOWN_BY_A_RELATED_PRODUCT
+        where = dict(sorted(where.items()))
+        names_a_skill = bool(where) or bool(_tools_named_in(line))
+        evidence.append({"ceiling": _most_the_line_can_earn(line, where), "tools": where, "names_a_skill": names_a_skill})
+    return evidence
+
+
+def _names(text: str, name: str) -> bool:
+    """Whether the text writes this name as a word of its own, in any letter case."""
+    return bool(re.search(r"(?<![A-Za-z0-9])" + re.escape(name) + r"(?![A-Za-z0-9])", text or "", re.IGNORECASE))
+
+
+def names_the_dictionary_does_not_know(lines: list) -> list:
+    """Capitalised names in the lines that the skills dictionary does not recognise, each once, in order.
+
+    The word that opens a sentence is capitalised whatever it is, so it is left out unless it is written
+    like a product name (OpenTofu, K3s). A short line is a list item, not a sentence, and keeps its first word.
+    """
+    names = []
+    for line in lines:
+        known_words = {word.lower() for mention in keyword_match.skills_in(line).values()
+                       for word in keyword_match.WORD.findall(mention["as_written"])}
+        for match in A_CAPITALISED_NAME.finditer(line):
+            name = match.group().rstrip(".")
+            opens_the_line = not line[:match.start()].strip(MARKS_AT_THE_ENDS_OF_A_LINE + "(\"'")
+            is_a_label = line[match.end():].lstrip().startswith(":")      # "Secondary: Terraform, Ansible"
+            if name.lower() in known_words or len(name) < 2 or name in names or is_a_label:
+                continue
+            is_a_sentence = len(line.split()) > MOST_WORDS_IN_A_LIST_ITEM
+            if opens_the_line and is_a_sentence and not HAS_A_CAPITAL_OR_DIGIT_INSIDE.search(name):
+                continue
+            names.append(name)
+    return names[:MOST_NEW_NAMES_ASKED_ABOUT]
+
+
+async def _categories_and_new_products(scorer: str, api_key: str, job_text: str, lines: list) -> tuple:
+    """(the dictionary's tools that Jev calls categories, the names the dictionary lacks that Jev is sure are products)."""
+    tools = sorted(_tools_named_in_any_of(lines))
+    new_names = [name for name in names_the_dictionary_does_not_know(lines) if name not in tools]
+    asked_about = tools + new_names
+    if not asked_about:
+        return set(), set()
+    questions = {f"p{number}": {"type": "choice", "instructions": PRODUCT_OR_CATEGORY_QUESTION.format(tool=_quoted(name)),
+                                "criteria": PRODUCT_OR_CATEGORY}
+                 for number, name in enumerate(asked_about)}
+    answers = await _ask(scorer, api_key, _posting_state(job_text), questions)
+    answer_of = {name: answers[f"p{number}"] for number, name in enumerate(asked_about)}
+    categories = {tool for tool in tools if answer_of[tool]["choice"] == A_CATEGORY}
+    new_products = {name for name in new_names
+                    if _how_sure(answer_of[name], A_PRODUCT) >= SURE_ENOUGH_A_NEW_NAME_IS_A_PRODUCT}
+    return categories, new_products
+
+
+async def _tools_shown_by_a_related_product(scorer: str, api_key: str, resume_text: str, tools: list) -> set:
+    """The tools whose work Jev is sure the résumé shows under another product's name: EKS for Kubernetes."""
+    if not tools:
+        return set()
+    questions = {f"r{number}": {"type": "choice", "instructions": RELATED_PRODUCT_QUESTION.format(tool=_quoted(tool)),
+                                "criteria": YES_OR_NO}
+                 for number, tool in enumerate(tools)}
+    work = _work_part_of(resume_text)[:decision_scorer.RESUME_MAX_CHARS]
+    answers = await _ask(scorer, api_key, f"Work experience: {work}", questions)
+    return {tool for number, tool in enumerate(tools)
+            if _how_sure(answers[f"r{number}"], YES) >= SURE_ENOUGH_OF_A_RELATED_PRODUCT}
+
+
+def _how_sure(answer: dict, choice: str) -> float:
+    """How likely Jev thinks this choice is; all or nothing when it gave no likelihoods."""
+    likelihoods = answer.get("probabilities")
+    if isinstance(likelihoods, dict) and choice in likelihoods:
+        return float(likelihoods[choice])
+    return 1.0 if answer.get("choice") == choice else 0.0
+
+
+def _where_the_resume_names(tool: str, tools_in_the_work: set, tools_anywhere: set) -> str:
+    if tool in tools_in_the_work:
+        return USED_IN_WORK
+    return ONLY_LISTED if tool in tools_anywhere else NOT_NAMED
+
+
+def _most_the_line_can_earn(line: str, where: dict) -> float:
+    if not where:
+        return FULL_CREDIT_ALLOWED
+    most_per_tool = [MOST_A_TOOL_CAN_EARN[place] for place in where.values()]
+    if NAMES_ONLY_EXAMPLES.search(line):
+        return max(max(most_per_tool), MOST_WHEN_NO_EXAMPLE_IS_USED)
+    if OFFERS_A_CHOICE.search(line):
+        return max(most_per_tool)
+    return round(sum(most_per_tool) / len(most_per_tool), 2)
+
+
+def _work_part_of(resume_text: str) -> str:
+    """The roles and projects of the résumé text. All of it, when the text has no section headings to go by."""
+    headings = list(HEADING_OF_THE_RESUME_TEXT.finditer(resume_text or ""))
+    if not headings:
+        return resume_text or ""
+    parts = []
+    for number, heading in enumerate(headings):
+        if heading.group(1).strip().lower() in WORK_SECTIONS:
+            end = headings[number + 1].start() if number + 1 < len(headings) else len(resume_text)
+            parts.append(resume_text[heading.end():end])
+    return "\n".join(parts)
+
+
+def _findability(resume_text: str, job_text: str, title: dict) -> dict:
+    """Whether a recruiter's search would turn the résumé up: the posting's keywords it names, and its title."""
+    keywords = keyword_match.keyword_match(resume_text, job_text)
+    return {"keyword_coverage_pct": keywords["keyword_coverage_pct"],
+            "matched_keywords": keywords["matched_keywords"], "missing_keywords": keywords["missing_keywords"],
+            "title_present": title["present"], "title_match": title["match"]}
+
+
+# The title a résumé prints under the name, against the job title the posting is for.
+# Recruiters filter by job title, so the nearer the wording, the more searches the résumé turns up in.
+TITLE_LEVELS = [
+    ("A different job: the title names other work than the posting's job title", 0.0),
+    ("A related job in the same field, but not the job the posting is for", 0.35),
+    ("The same job as the posting's job title, in different words or at a different seniority", 0.7),
+    ("The posting's job title, word for word", 1.0),
+]
+TITLE_QUESTION = (
+    'The resume prints this title under the candidate\'s name: "{title}". '
+    "How closely does it match the job title this posting is for? "
+    "Judge the wording of the title against the posting's own job title, not the candidate's experience.")
+
+
+async def title_against_the_posting(scorer: str, title_lines: list, job_text: str) -> dict:
+    """Whether the résumé prints a title, and how closely its best title line matches the posting's job title.
+
+    Returns {"present", "lines", "match", "best_line"}. match runs from 0 (a different job) to 1 (word for word),
+    and is None when the résumé prints no title.
+    """
+    lines = [str(line).strip() for line in title_lines or () if str(line).strip()]
+    if not lines:
+        return {"present": False, "lines": [], "match": None, "best_line": ""}
+    questions = {}
+    for number, line in enumerate(lines):
+        questions[f"t{number}"] = {
+            "type": "score",
+            "instructions": TITLE_QUESTION.format(title=_quoted(line)),
+            "criteria": [description for description, _share in TITLE_LEVELS],
+        }
+    api_key = decision_scorer._find_api_key(scorer)
+    answers = await _ask(scorer, api_key, _posting_state(job_text), questions)
+    matches = [decision_scorer._share_earned(answers[f"t{number}"], TITLE_LEVELS) for number in range(len(lines))]
+    best = max(range(len(lines)), key=lambda number: matches[number])
+    return {"present": True, "lines": lines, "match": round(matches[best], 2), "best_line": lines[best]}
 
 
 async def _how_important_each_line_is(scorer: str, job_text: str, lines: list) -> list:
@@ -1010,11 +1396,11 @@ async def _how_important_each_line_is(scorer: str, job_text: str, lines: list) -
 
 
 def _coverage_averaged_by_importance(rows: list):
-    """The coverage of a list of lines, a more important line counting for more; None for an empty list."""
+    """The credit earned across a list of lines, a more important line counting for more; None for an empty list."""
     total_importance = sum(row["importance"] for row in rows)
     if not total_importance:
         return None
-    return sum(row["covered"] * row["importance"] for row in rows) / total_importance
+    return sum(row["credit"] * row["importance"] for row in rows) / total_importance
 
 
 async def _share_kept_for_the_occupation(scorer: str, resume_text: str, job_text: str) -> float:

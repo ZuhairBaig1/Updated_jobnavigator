@@ -27,8 +27,9 @@ def _saved(test_db, resume=None):
 def _scores_are(monkeypatch, result):
     asked = []
 
-    async def fake_ats_score(scorer, resume_text, job_text):
-        asked.append({"scorer": scorer, "resume_text": resume_text, "job_text": job_text})
+    async def fake_ats_score(scorer, resume_text, job_text, title_lines=()):
+        asked.append({"scorer": scorer, "resume_text": resume_text, "job_text": job_text,
+                      "title_lines": title_lines})
         return result
     monkeypatch.setattr(line_match, "ats_score", fake_ats_score)
     return asked
@@ -83,3 +84,14 @@ def test_a_resume_that_does_not_exist_is_not_found(api_client, test_db, monkeypa
     reply = api_client.post("/api/resumes/00000000-0000-0000-0000-000000000000/ats-score", json={"job_description": "x"})
 
     assert reply.status_code == 404
+
+
+def test_the_title_lines_under_the_name_are_sent_to_be_matched_against_the_posting(api_client, test_db, monkeypatch):
+    saved = _saved(test_db, _resume(header={"name": "Jordan Lee", "target_title": "Senior DevOps Engineer",
+                                            "title": "Site Reliability Engineer"}))
+    asked = _scores_are(monkeypatch, SCORE)
+
+    reply = api_client.post(f"/api/resumes/{saved.id}/ats-score", json={"job_description": "Requirements\n- Kubernetes"})
+
+    assert reply.status_code == 200, reply.text
+    assert asked[0]["title_lines"] == ["Senior DevOps Engineer", "Site Reliability Engineer"]

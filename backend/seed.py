@@ -13,7 +13,32 @@ logger = logging.getLogger("jobnavigator.seed")
 # enforced as a response schema (resume_schema.TAILOR_JSON_SCHEMA); the JSON at the
 # end states it for whoever edits the prompt, and for the CLI providers, which take
 # no schema.
+# The two title rules and the keyword range are named, so a prompt stored before they existed can be
+# brought up to date (see bring_stored_tailor_prompts_up_to_date).
+_OLD_HEADLINE_RULE = (
+    "- The title is the headline under the name. Keep the resume's own, or narrow it to the part of it that fits the posting (\"GenAI / LLM Engineer | Python Backend Engineer\" -> \"GenAI / LLM Engineer\"). Never invent one, never add seniority the resume does not claim, and never copy the posting's job title.\n"
+)
+_HEADLINE_RULE = (
+    "- The header's title is the candidate's own headline, the line the resume prints under the name. Keep the resume's own, or narrow it to the part of it that fits the posting (\"GenAI / LLM Engineer | Python Backend Engineer\" -> \"GenAI / LLM Engineer\"). Never invent one, never add seniority the resume does not claim, and never put the posting's job title here: that has its own field, target_job_title.\n"
+)
+_TARGET_TITLE_RULE = (
+    "- target_job_title is a separate field, outside the header: the job title of the posting, copied word for word from the job description, with no synonym, no rewording and no seniority added or removed. It names the role being applied for, not a title the candidate has held, so rule 0 does not apply to it and it is expected to be missing from the resume. Leave it empty when the posting states no clear job title.\n"
+    "- The posting's job title goes nowhere else: never into a role's job title in work experience, and never into the summary as a title the candidate has held, unless the resume shows they held it.\n"
+)
+_OLD_NO_QUOTA_RULE = "- There is no quota. Never add a mention to reach a count"
+_OLD_SUMMARY_LENGTH_RULE = "- One concise paragraph, never a long list.\n"
+_SUMMARY_LENGTH_RULE = (
+    "- One paragraph, never a list.\n"
+    "- Never make the summary shorter than the resume's own. Rewrite and reorder it towards the posting, but keep everything it says: every skill, tool, domain, number and strength the resume's summary names still appears in yours. A sentence may be reworded; it is never dropped or cut down to make room for something else.\n"
+)
+_KEYWORD_RANGE_RULE = (
+    "- Aim for 25-35 distinct keywords from the posting across the whole resume, in the posting's exact words. A keyword counts once however often it appears, and only a keyword the resume already supports counts.\n"
+    "- That range is something to choose within, never a quota to fill. When the resume supports fewer than 25, use the ones it supports and add none. When it supports more than 35, work the most critical ones into the summary and the bullets and let the minor ones go unmentioned there, because a resume that repeats every keyword in the posting reads as stuffed. The range never removes a skill from technical skills (rule 5) or a relevant bullet (rule 6).\n"
+)
+_NO_QUOTA_RULE = "- There is no quota of mentions either. Never add a mention to reach a count"
+
 _TAILOR_RULES = (
+    (
     "Rule 0 overrides every other rule.\n\n"
     "0. TRUTHFULNESS\n"
     "- Never make up information: no invented metric, skill, tool, experience, employer, title, date, certification or contact detail.\n"
@@ -36,12 +61,17 @@ _TAILOR_RULES = (
     "- Only content with no connection at all to the posting is irrelevant. Relevant is the default; irrelevant is the exception you must be able to justify.\n\n"
     "3. HEADER\n"
     "- Copy every header field exactly from the resume.\n"
-    "- The title is the headline under the name. Keep the resume's own, or narrow it to the part of it that fits the posting (\"GenAI / LLM Engineer | Python Backend Engineer\" -> \"GenAI / LLM Engineer\"). Never invent one, never add seniority the resume does not claim, and never copy the posting's job title.\n"
+    )
+    + _HEADLINE_RULE
+    + _TARGET_TITLE_RULE
+    + (
     "- The location is where the candidate lives, copied exactly from the resume's header. Never move it towards the posting's location, never shorten or expand it, and never take it from a role's location.\n"
     "- A field the resume does not state stays empty. Never add a LinkedIn or GitHub link the resume does not have.\n"
     "- Nothing else: no marital status, languages, references, date of birth, photo or other personal details.\n\n"
     "4. PROFESSIONAL SUMMARY\n"
-    "- One concise paragraph, never a long list.\n"
+    )
+    + _SUMMARY_LENGTH_RULE
+    + (
     "- Open with a word that describes what the candidate is, taken from the resume's own language. Keep the opening word the resume already uses unless the posting gives you a better one from the resume itself. Never copy an opener out of these instructions.\n"
     "- Include total years of experience and quantified achievements, only as the resume states them.\n"
     "- Include the most critical JD keywords; they must also appear in the experience bullets.\n\n"
@@ -74,7 +104,11 @@ _TAILOR_RULES = (
     "- In a kept project, keep and rewrite its bullets by the same rules as work experience bullets.\n\n"
     "8. KEYWORDS\n"
     "- Where the resume already supports a critical JD keyword, let it show: in the professional summary, in the bullets whose work already involved it (across more than one role where the resume shows that), and once in technical skills.\n"
-    "- There is no quota. Never add a mention to reach a count, and never put a keyword into a bullet, a skill line or the summary that did not already involve it: one truthful mention beats three placed ones, and a placed one is a lie a recruiter will test in the interview.\n"
+    )
+    + _KEYWORD_RANGE_RULE
+    + _NO_QUOTA_RULE
+    + (
+    ", and never put a keyword into a bullet, a skill line or the summary that did not already involve it: one truthful mention beats three placed ones, and a placed one is a lie a recruiter will test in the interview.\n"
     "- Repeat them in context, inside real achievements, not as bare lists of tools.\n"
     "- Use the JD's exact phrasing. Write a full term with its acronym once, e.g. \"Change Data Capture (CDC)\".\n\n"
     "9. EDUCATION\n"
@@ -85,6 +119,7 @@ _TAILOR_RULES = (
     "- Keep a certification when it is relevant to the candidate's field or to the posting's domain, even when the posting never names it. Leave out only credentials from an unrelated field.\n\n"
     "11. LANGUAGE\n"
     "- No unnatural phrasing and no generic fluff. Keep the candidate's own voice."
+    )
 )
 
 _TAILOR_REPLY = (
@@ -1390,11 +1425,37 @@ def migrate_dedup_tracking_params(db):
         pass   # the cache loads lazily anyway; a failed eager reload is not fatal
 
 
+TAILOR_PROMPT_SETTINGS = ("cv_tailor_prompt", "persona_tailor_prompt")
+
+
+def bring_stored_tailor_prompts_up_to_date(db):
+    """Give an already-stored tailor prompt the separate target job title, the keyword range and the summary's length rule.
+
+    Settings are seeded once, so a prompt stored earlier still tells the model never to use the posting's title.
+    Only the rules that changed are rewritten; anything else the user edited is left as it is.
+    """
+    for key in TAILOR_PROMPT_SETTINGS:
+        row = db.query(Setting).filter(Setting.key == key).first()
+        if not row or not row.value:
+            continue
+        prompt = row.value
+        if _TARGET_TITLE_RULE not in prompt:
+            prompt = prompt.replace(_OLD_HEADLINE_RULE, _HEADLINE_RULE + _TARGET_TITLE_RULE)
+        if _KEYWORD_RANGE_RULE not in prompt:
+            prompt = prompt.replace(_OLD_NO_QUOTA_RULE, _KEYWORD_RANGE_RULE + _NO_QUOTA_RULE)
+        if _SUMMARY_LENGTH_RULE not in prompt:
+            prompt = prompt.replace(_OLD_SUMMARY_LENGTH_RULE, _SUMMARY_LENGTH_RULE)
+        if prompt != row.value:
+            row.value = prompt
+            db.commit()
+
+
 def run_seeds():
     db = SessionLocal()
     try:
         run_migrations(db)
         seed_settings(db)
+        bring_stored_tailor_prompts_up_to_date(db)
         migrate_dedup_tracking_params(db)
         migrate_autofill_dicts(db)
         seed_companies(db)

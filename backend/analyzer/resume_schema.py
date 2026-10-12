@@ -148,8 +148,9 @@ def normalize_resume(data: dict) -> dict:
 # follows that order (strict mode emits keys in schema order); build_base_resume and
 # build_tailored_resume fold it back into json_data.
 
-def _ats_schema(role: dict) -> dict:
+def _ats_schema(role: dict, asked_first: dict | None = None) -> dict:
     return _obj({
+        **(asked_first or {}),
         "header": _obj({
             "name": _STR, "title": _STR, "location": _STR, "email": _STR, "phone": _STR,
             "work_authorization": _STR, "github": _STR, "linkedin": _STR,
@@ -168,10 +169,13 @@ def _ats_schema(role: dict) -> dict:
 
 TAILOR_SCHEMA_NAME = "tailored_resume"
 
+# The posting's own job title, which a tailored copy prints apart from the candidate's headline.
+TARGET_JOB_TITLE = "target_job_title"
+
 TAILOR_JSON_SCHEMA = _ats_schema({
     "job_title": _STR, "company": _STR, "location": _STR, "dates": _STR,
     "bullets": _STR_LIST,
-})
+}, asked_first={TARGET_JOB_TITLE: _STR})
 
 BASE_SCHEMA_NAME = "base_resume"
 
@@ -429,7 +433,25 @@ def _contact_kind(item: dict) -> str | None:
     return None
 
 
-def _tailored_header(base_header: dict, reply_header: dict, base_text: str) -> dict:
+LONGEST_TARGET_TITLE_CHARS = 120
+
+
+def target_job_title(reply: dict, jd_text: str, title_of_the_job: str = "") -> str:
+    """The posting's job title, word for word: the stored job's own, else the reply's when the posting states it.
+
+    It names the role applied for, so it is checked against the posting and never against the résumé.
+    """
+    stored = _text(title_of_the_job)
+    if stored:
+        return stored[:LONGEST_TARGET_TITLE_CHARS]
+    from_reply = _text((reply or {}).get(TARGET_JOB_TITLE))
+    key = _squash(from_reply)
+    if len(key) < 3 or len(from_reply) > LONGEST_TARGET_TITLE_CHARS or key not in _squash(jd_text):
+        return ""
+    return from_reply
+
+
+def _tailored_header(base_header: dict, reply_header: dict, base_text: str, target_title: str = "") -> dict:
     """The name, then location, email, phone, work authorization, GitHub and LinkedIn: the base's own contact items, in that order.
 
     Items are copied whole (text, url, tracer stub), never rewritten from the reply.
@@ -480,6 +502,9 @@ def _tailored_header(base_header: dict, reply_header: dict, base_text: str) -> d
     header = {"name": base_header.get("name", ""),
               "title": title,
               "contact_items": [picked[k] for k in _HEADER_ORDER if k in picked]}
+    # The posting's title sits in its own field, so the candidate's headline is never overwritten by it.
+    if target_title:
+        header["target_title"] = target_title
     if contact:
         header["contact"] = dict(contact)
     return header
@@ -979,8 +1004,17 @@ def build_base_resume(reply: dict) -> dict:
     })
 
 
+# A rewritten summary may lose a few words to rewording, but not a sentence: below this share of the
+# base summary's words it has been cut down, and the base's own is printed instead.
+SHORTEST_SUMMARY_SHARE_OF_THE_BASE = 0.9
+
+
+def _is_cut_down(written: str, original: str) -> bool:
+    return len(written.split()) < SHORTEST_SUMMARY_SHARE_OF_THE_BASE * len(original.split())
+
+
 def _tailored_summary(reply: dict, base: dict, jd_text: str) -> str:
-    """The reply's summary, unless rewriting it dropped something the posting asked for.
+    """The reply's summary, unless rewriting it cut it down or dropped something the posting asked for.
 
     A rewritten summary is usually the better one — it leads with what the posting wants.
     But the model shortens as it rewrites, and a term this posting names is the last thing
@@ -990,6 +1024,10 @@ def _tailored_summary(reply: dict, base: dict, jd_text: str) -> str:
     written = canonicalize_tech(_text(reply.get("professional_summary")))
     original = base.get("summary", "")
     if not written:
+        return original
+    if original and _is_cut_down(written, original):
+        logger.warning("Tailor: keeping the base summary — the rewrite cut it from %d words to %d",
+                       len(original.split()), len(written.split()))
         return original
     if not original or not jd_text:
         return written
@@ -1127,7 +1165,7 @@ def _ground_bullets(rewritten: list, base_bullets: list, vocab: set) -> list:
     return out
 
 
-def build_tailored_resume(reply: dict, base: dict, jd_text: str = "") -> dict:
+def build_tailored_resume(reply: dict, base: dict, jd_text: str = "", title_of_the_job: str = "") -> dict:
     """A tailor reply folded onto its base: json_data holding only the ATS sections, in order.
 
     The reply supplies the prose (summary, technical skills, each role's and project's
@@ -1137,7 +1175,8 @@ def build_tailored_resume(reply: dict, base: dict, jd_text: str = "") -> dict:
     keeps the base's, and a role no reply entry matches keeps its base bullets; a project the reply
     omits keeps its base bullets, and one the base doesn't hold is never added. Skills the
     reply leaves out come back from the base: it groups, orders and words them, the base
-    decides which exist. Publications are not carried over.
+    decides which exist. Publications are not carried over. The one thing taken from the
+    posting is its job title, kept in the header's own target_title field.
     """
     reply = reply if isinstance(reply, dict) else {}
     base = base or {}
@@ -1200,7 +1239,8 @@ def build_tailored_resume(reply: dict, base: dict, jd_text: str = "") -> dict:
     base_header = base.get("header") if isinstance(base.get("header"), dict) else {}
     reply_header = reply.get("header") if isinstance(reply.get("header"), dict) else {}
     return {
-        "header": _tailored_header(base_header, reply_header, base_text),
+        "header": _tailored_header(base_header, reply_header, base_text,
+                                   target_job_title(reply, jd_text, title_of_the_job)),
         "summary": _tailored_summary(reply, base, jd_text),
         "skills": _merge_skills(_skills_map(reply.get("technical_skills")),
                                 base.get("skills") or {}, base_text),

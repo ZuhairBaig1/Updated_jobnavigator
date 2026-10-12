@@ -146,6 +146,8 @@ ul.bullets li .mark { flex: 0 0 auto; }
   {% if header %}
   <div class="header">
     <h1>{{ header.name }}</h1>
+    {# The job title of the posting a copy was tailored for. Absent on a base resume. #}
+    {% if header.target_title %}<div class="title-line">{{ header.target_title }}</div>{% endif %}
     {% if header.title %}<div class="title-line">{{ header.title }}</div>{% endif %}
     <div class="contact">
       {% set contact_parts = [] %}

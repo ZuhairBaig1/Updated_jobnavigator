@@ -208,6 +208,12 @@ export function HeaderEditor({ data, setField, mutate, onRemoved }) {
         <Label>Title</Label>
         <Input value={data.header?.title || ''} onChange={(v) => setField('header.title', v)} placeholder="Headline, e.g. Senior Product Manager" ariaLabel="Title" />
       </div>
+      {/* header.target_title is the posting's own job title, set when a copy is tailored.
+          It prints above the headline; an empty value renders nothing. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <Label>Target job title</Label>
+        <Input value={data.header?.target_title || ''} onChange={(v) => setField('header.target_title', v)} placeholder="The posting's exact job title" ariaLabel="Target job title" />
+      </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
           <Label>Contact items</Label>

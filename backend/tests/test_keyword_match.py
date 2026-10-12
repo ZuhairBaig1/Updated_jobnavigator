@@ -98,3 +98,25 @@ def test_named_techniques_a_posting_asks_for_are_kept():
     found = skills_in("Build RAG pipelines and CI/CD for our microservices, with infrastructure as code.")
 
     assert set(found) == {"Retrieval-Augmented Generation", "CI/CD", "Microservices", "Infrastructure as Code"}
+
+
+def test_a_phrase_never_runs_across_a_comma():
+    """"Kubernetes, Docker, container orchestration" names Docker, not a "Docker container"."""
+    from backend.analyzer.keyword_match import skills_in
+    found = skills_in("Hands-on expertise with Kubernetes, Docker, container orchestration, and cloud-native technologies.")
+
+    assert "Docker" in found
+    assert "docker-container" not in found
+
+
+def test_a_phrase_written_together_is_still_one_skill():
+    from backend.analyzer.keyword_match import skills_in
+
+    assert "Infrastructure as Code" in skills_in("Experience with Terraform or similar Infrastructure as Code platforms.")
+
+
+def test_skills_joined_by_slashes_are_each_found():
+    from backend.analyzer.keyword_match import skills_in
+    found = skills_in("Experience with AWS/Azure/GCP and CI/CD pipelines")
+
+    assert {"AWS", "Microsoft Azure", "CI/CD"} <= set(found)

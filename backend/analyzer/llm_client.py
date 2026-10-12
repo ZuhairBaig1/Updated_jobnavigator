@@ -285,6 +285,11 @@ OPENROUTER_MODEL_LADDERS = {
 }
 
 
+# Models whose OpenRouter hosts refuse a request that sets a temperature ("No endpoints found that
+# can handle the requested parameters"), so none is sent. Checked 2026-10-09.
+OPENROUTER_MODELS_THAT_TAKE_NO_TEMPERATURE = {"anthropic/claude-haiku-5.5"}
+
+
 def openrouter_ladder(model: str) -> tuple:
     """The OpenRouter backend ladder for `model`: its own measured pins, else the default."""
     return OPENROUTER_MODEL_LADDERS.get(model, OPENROUTER_BACKEND_LADDER)
@@ -414,6 +419,8 @@ async def _dispatch(provider: str, model: str, api_key: str,
         routing = _openrouter_routing(backend, response_schema) or {}
         if reasoning is False:
             routing = {**routing, "reasoning": {"enabled": False}}
+        if model in OPENROUTER_MODELS_THAT_TAKE_NO_TEMPERATURE:
+            temperature = None
         return await _call_openai(combined, system, model, api_key, max_tokens,
                                   base_url=OPENROUTER_BASE_URL,
                                   extra_body=routing or None,

@@ -84,3 +84,16 @@ def test_score_prompt_uses_resume_version_label():
     src = inspect.getsource(cv_scorer)
     assert "CV VERSION" not in src, "Prompt still uses 'CV VERSION' — should be 'Resume Version'"
     assert "Resume Version" in src or "RESUME VERSION" in src
+
+
+def test_scoring_text_carries_the_title_lines_under_the_name():
+    from backend.analyzer.cv_scorer import resume_text_for_scoring
+    text = resume_text_for_scoring({"header": {"name": "Jane Doe", "target_title": "Senior DevOps Engineer",
+                                               "title": "Site Reliability Engineer"}, "summary": "s"})
+    assert text.splitlines()[:3] == ["Jane Doe", "Senior DevOps Engineer", "Site Reliability Engineer"]
+
+
+def test_cover_letters_and_answers_do_not_read_the_target_title_as_a_held_title():
+    from backend.analyzer.cv_scorer import _flatten_resume
+    text = _flatten_resume({"header": {"name": "Jane Doe", "target_title": "Senior DevOps Engineer"}, "summary": "s"})
+    assert "Senior DevOps Engineer" not in text

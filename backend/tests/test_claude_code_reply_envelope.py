@@ -151,3 +151,19 @@ def test_a_reply_with_no_usage_counts_as_no_tokens():
     nothing = {"input_tokens": 0, "output_tokens": 0, "cache_read_tokens": 0, "cache_write_tokens": 0}
 
     assert _claude_code_usage(None) == _claude_code_usage({}) == _claude_code_usage({"usage": "n/a"}) == nothing
+
+
+@pytest.mark.asyncio
+async def test_the_cli_is_given_room_for_thinking_and_a_long_answer(monkeypatch):
+    import json
+    import backend.analyzer.llm_client as L
+    seen = {}
+
+    async def fake_run_cli(cmd, stdin, env=None, **options):
+        seen.update(env or {})
+        return 0, json.dumps({"result": "ok"}).encode(), b""
+    monkeypatch.setattr(L, "_run_cli", fake_run_cli)
+
+    await L._call_claude_code("prompt", "system", "claude-haiku-5-5", 16000)
+
+    assert seen["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] == "64000"

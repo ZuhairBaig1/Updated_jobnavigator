@@ -547,6 +547,12 @@ CLAUDE_CODE_PLAIN_MODEL_FLAGS = [
 ]
 
 
+# The CLI caps a reply at 32,000 tokens unless told otherwise, and the model's thinking counts against
+# that cap. Tailoring one 76-bullet résumé on Haiku 5.5 used 27,311 (20,792 of them thinking), so a
+# longer résumé would have been cut off mid-answer. Nothing is paid for the headroom.
+CLAUDE_CODE_MOST_OUTPUT_TOKENS = 64_000
+
+
 async def _call_claude_code(prompt: str, system: str, model: str, max_tokens: int,
                              response_schema: dict | None = None,
                              reasoning: bool | None = None) -> dict:
@@ -570,6 +576,7 @@ async def _call_claude_code(prompt: str, system: str, model: str, max_tokens: in
         prompt_text = _schema_in_prompt(prompt, response_schema)
 
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+    env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = str(CLAUDE_CODE_MOST_OUTPUT_TOKENS)
     if reasoning is False and "haiku" in (model or "").lower():
         # `--effort low` does not stop Haiku thinking: measured ~7,500 thinking tokens and
         # ~2 minutes per job posting, against ~15 seconds and the same answers with it off.

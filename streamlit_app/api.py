@@ -116,6 +116,7 @@ def start_tailoring(base_resume_id: str, job_description: str) -> str:
 SCORING_METHODS = {
     "Rubric — Gemma 4 31B": {"scorer": "rubric", "model": "gemma"},
     "Rubric — Claude Haiku 5.5": {"scorer": "rubric", "model": "haiku"},
+    "Rubric — Haiku 5.5 on the Claude plan (local backend)": {"scorer": "rubric", "model": "haiku_plan"},
     "Line by line — Jev": {"scorer": "jev"},
 }
 

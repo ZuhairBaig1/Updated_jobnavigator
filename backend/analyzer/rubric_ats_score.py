@@ -39,8 +39,10 @@ logger = logging.getLogger("jobnavigator.rubric_ats_score")
 PROVIDER = "openrouter"
 MODEL = "google/gemma-4-31b-it"
 # The models a caller may ask for by a short name, each with the provider that serves it.
-GEMMA, HAIKU = "gemma", "haiku"
-MODELS = {GEMMA: (PROVIDER, MODEL), HAIKU: (PROVIDER, "anthropic/claude-haiku-5.5")}
+GEMMA, HAIKU, HAIKU_ON_THE_CLAUDE_PLAN = "gemma", "haiku", "haiku_plan"
+# The last one runs on the Claude Code login of a local backend: no OpenRouter credit is spent or needed.
+MODELS = {GEMMA: (PROVIDER, MODEL), HAIKU: (PROVIDER, "anthropic/claude-haiku-5.5"),
+          HAIKU_ON_THE_CLAUDE_PLAN: ("claude_code", "claude-haiku-5-5")}
 # Eight reasons of a sentence each, eight picks, and three missing requirements.
 MOST_REPLY_TOKENS = 700
 MOST_WORDS_IN_A_REASON = 20

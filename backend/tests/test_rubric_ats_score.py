@@ -174,7 +174,8 @@ async def test_a_failed_call_or_a_reply_that_is_not_json_gives_no_score(monkeypa
 
 def test_gemma_and_haiku_are_the_models_a_caller_may_name():
     assert rubric.MODELS == {"gemma": ("openrouter", "google/gemma-4-31b-it"),
-                             "haiku": ("openrouter", "anthropic/claude-haiku-5.5")}
+                             "haiku": ("openrouter", "anthropic/claude-haiku-5.5"),
+                             "haiku_plan": ("claude_code", "claude-haiku-5-5")}
 
 
 # ── What keeps the score steady ────────────────────────────────────────────────

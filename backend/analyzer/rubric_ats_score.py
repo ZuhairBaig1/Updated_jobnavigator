@@ -569,7 +569,9 @@ async def _one_reply(prompt: str, provider: str, model: str) -> dict | None:
         logger.warning(f"A rubric reply was not usable: {(reply.get('text') or '')[:200]!r}")
         return None
     usage = reply.get("usage") or {}
-    return {"answers": answers, "model": reply.get("model"), "input_tokens": usage.get("input_tokens", 0) or 0,
+    # Input the provider served from its cache is input all the same.
+    input_tokens = sum(usage.get(key, 0) or 0 for key in ("input_tokens", "cache_read_tokens", "cache_write_tokens"))
+    return {"answers": answers, "model": reply.get("model"), "input_tokens": input_tokens,
             "output_tokens": usage.get("output_tokens", 0) or 0}
 
 

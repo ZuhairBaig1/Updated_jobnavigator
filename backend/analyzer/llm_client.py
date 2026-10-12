@@ -603,10 +603,22 @@ async def _call_claude_code(prompt: str, system: str, model: str, max_tokens: in
         # Retryable on purpose: an empty completion is a bad minute, not a bad setup.
         raise RuntimeError("Claude Code returned an empty reply")
 
-    return {
-        "text": text.strip(),
-        "usage": {"input_tokens": 0, "output_tokens": 0, "cache_read_tokens": 0, "cache_write_tokens": 0},
-    }
+    return {"text": text.strip(), "usage": _claude_code_usage(data)}
+
+
+def _claude_code_usage(envelope) -> dict:
+    """The tokens the CLI says one call used. It reports them, and returning zeros hid what a call really costs:
+    a scoring call measured about 4,300 output tokens where its answer alone is about 600."""
+    used = envelope.get("usage") if isinstance(envelope, dict) else None
+    used = used if isinstance(used, dict) else {}
+
+    def count(key: str) -> int:
+        value = used.get(key)
+        return value if isinstance(value, int) and value > 0 else 0
+
+    return {"input_tokens": count("input_tokens"), "output_tokens": count("output_tokens"),
+            "cache_read_tokens": count("cache_read_input_tokens"),
+            "cache_write_tokens": count("cache_creation_input_tokens")}
 
 
 class CLITimeoutError(RuntimeError):

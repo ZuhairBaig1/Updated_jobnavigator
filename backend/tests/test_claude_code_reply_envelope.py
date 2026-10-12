@@ -135,3 +135,19 @@ async def test_a_failed_subprocess_still_reports_stderr(monkeypatch):
     with pytest.raises(RuntimeError) as exc:
         await _call()
     assert "not logged in" in str(exc.value)
+
+
+def test_the_tokens_the_cli_reports_are_passed_on():
+    from backend.analyzer.llm_client import _claude_code_usage
+    envelope = {"result": "{}", "usage": {"input_tokens": 2, "cache_creation_input_tokens": 297,
+                                          "cache_read_input_tokens": 9774, "output_tokens": 4356}}
+
+    assert _claude_code_usage(envelope) == {"input_tokens": 2, "output_tokens": 4356,
+                                            "cache_read_tokens": 9774, "cache_write_tokens": 297}
+
+
+def test_a_reply_with_no_usage_counts_as_no_tokens():
+    from backend.analyzer.llm_client import _claude_code_usage
+    nothing = {"input_tokens": 0, "output_tokens": 0, "cache_read_tokens": 0, "cache_write_tokens": 0}
+
+    assert _claude_code_usage(None) == _claude_code_usage({}) == _claude_code_usage({"usage": "n/a"}) == nothing

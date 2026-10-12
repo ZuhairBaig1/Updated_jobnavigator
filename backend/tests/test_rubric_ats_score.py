@@ -511,3 +511,13 @@ def test_only_the_names_a_role_writes_are_kept_from_what_the_model_quotes():
     assert rubric.names_written_in_the_roles("Google GKE", work) == ""
     assert rubric.names_written_in_the_roles("", work) == ""
     assert rubric.names_written_in_the_roles("KS", work) == ""           # part of a word is not the word
+
+
+@pytest.mark.asyncio
+async def test_input_served_from_the_providers_cache_is_counted_as_input(monkeypatch):
+    reply = {**_reply(), "usage": {"input_tokens": 2, "cache_read_tokens": 9774, "cache_write_tokens": 297, "output_tokens": 4356}}
+    _model_replies(monkeypatch, reply)
+
+    result = await rubric.ats_score(RESUME, POSTING)
+
+    assert (result["input_tokens"], result["output_tokens"]) == (3 * 10073, 3 * 4356)

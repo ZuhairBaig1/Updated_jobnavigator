@@ -211,6 +211,26 @@ PARTS_OF_THE_RUBRIC = {"occupation": "Same occupation", "title": "Title match", 
                        "qualifications": "Qualifications", "evidence": "Evidence in the roles"}
 
 
+def _what_a_part_earned(row: dict, times_asked: int) -> str:
+    """What the part earned, saying so when that is an average and differs from what the option shown stands for."""
+    if row["share"] is None:
+        return "—"
+    earned = f"{100 * row['share']:.0f}%"
+    shown = row.get("option_share")
+    if times_asked > 1 and shown is not None and abs(row["share"] - shown) >= 0.01:
+        return f"{earned} (average of {times_asked} runs)"
+    return earned
+
+
+def _show_time_taken(score: dict):
+    """How long the score took to work out, as this app waited for it."""
+    seconds = score.get("_seconds")
+    if seconds is None:
+        return
+    how = " — remembered from an earlier run of the same resume and posting" if score.get("remembered") else ""
+    st.caption(f"⏱ Calculated in {seconds:.1f} seconds{how}")
+
+
 def _show_rubric_score(score: dict):
     """The score from the rubric: the total, what scaled it, the model's pick and reason per question, and the keywords."""
     total, occupation, core, keywords = st.columns(4)
@@ -225,7 +245,7 @@ def _show_rubric_score(score: dict):
     for missing in score.get("missing") or []:
         st.error(f"Missing: {missing}")
     rows = [{"Part": PARTS_OF_THE_RUBRIC.get(row["question"], row["question"]), "Picked": row["meaning"],
-             "Earned": "—" if row["share"] is None else f"{100 * row['share']:.0f}%",
+             "Earned": _what_a_part_earned(row, score.get("times_asked", 1)),
              "Weight": "scales the total" if row["weight"] is None else f"{100 * row['weight']:.0f}%",
              "Reason": row["reason"]} for row in score.get("rubric") or []]
     st.dataframe(rows, hide_index=True, use_container_width=True)
@@ -245,6 +265,7 @@ def _show_rubric_score(score: dict):
 
 
 def _show_ats_score(score: dict):
+    _show_time_taken(score)
     if score.get("scorer") == "rubric":
         _show_rubric_score(score)
         return
@@ -289,8 +310,9 @@ def _ats_score_panel(resume_id: str):
             else:
                 with st.spinner("Scoring…"):
                     try:
-                        st.session_state.ats_scores[resume_id] = api.get_ats_score(
-                            resume_id, job_description.strip(), method)
+                        started = time.monotonic()
+                        score = api.get_ats_score(resume_id, job_description.strip(), method)
+                        st.session_state.ats_scores[resume_id] = {**score, "_seconds": time.monotonic() - started}
                     except api.BackendError as e:
                         st.error(str(e))
         if resume_id in st.session_state.ats_scores:

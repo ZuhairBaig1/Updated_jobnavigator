@@ -43,8 +43,8 @@ GEMMA, HAIKU, HAIKU_ON_THE_CLAUDE_PLAN = "gemma", "haiku", "haiku_plan"
 # The last one runs on the Claude Code login of a local backend: no OpenRouter credit is spent or needed.
 MODELS = {GEMMA: (PROVIDER, MODEL), HAIKU: (PROVIDER, "anthropic/claude-haiku-5.5"),
           HAIKU_ON_THE_CLAUDE_PLAN: ("claude_code", "claude-haiku-5-5")}
-# Eight reasons of a sentence each, eight picks, and three missing requirements.
-MOST_REPLY_TOKENS = 700
+# Seven reasons of a sentence each, seven picks, the duties sorted into two lists, and three missing requirements.
+MOST_REPLY_TOKENS = 900
 MOST_WORDS_IN_A_REASON = 20
 RESUME_MAX_CHARS = 24_000
 POSTING_MAX_CHARS = 8_000
@@ -52,7 +52,7 @@ MOST_MISSING_REQUIREMENTS = 3
 # How many times the model is asked. The middle pick of an odd number of answers needs no tie-break.
 TIMES_ASKED = 3
 # Changed whenever the rubric, the prompt or the arithmetic changes, so remembered scores are not reused.
-VERSION = "4"
+VERSION = "5"
 MOST_SCORES_REMEMBERED = 500
 
 
@@ -101,10 +101,6 @@ RUBRIC = {
         "asks": "The other skills and tools asked for, preferred ones included: how many used in a role or project?",
         "options": {**HOW_MANY, **NOT_STATED},
     },
-    DUTIES: {
-        "asks": "The duties the posting describes: how many has the candidate done?",
-        "options": {**HOW_MANY, **NOT_STATED},
-    },
     EXPERIENCE: {
         "asks": "Years and seniority asked for, counting only years in this kind of work. "
                 "A seniority in the job title counts as asked for.",
@@ -134,6 +130,13 @@ RUBRIC = {
     },
 }
 
+# The duties are not a pick. The model sorts each duty the posting describes into met or not met, and code
+# counts them: picking between "all" and "most" by eye, it called a résumé's thin disaster-recovery work done.
+DUTIES_MET, DUTIES_NOT_MET = "duties_met", "duties_not_met"
+DUTIES_ASKS = "The duties the posting describes: how many do the roles show the candidate doing?"
+COUNTED = "counted"
+MOST_DUTIES_NAMED_IN_A_REASON = 4
+
 # How much each part counts in the total. The keyword match is the code's own part.
 WEIGHT_OF_PART = {CORE_SKILLS: 0.30, DUTIES: 0.20, KEYWORDS: 0.15, OTHER_SKILLS: 0.10, EXPERIENCE: 0.10,
                   EVIDENCE: 0.05, TITLE: 0.05, QUALIFICATIONS: 0.05}
@@ -150,6 +153,8 @@ SYSTEM_PROMPT = (
     "Use only the two texts. "
     f"In core_skills_named, list the 3 to {MOST_CORE_SKILLS_NAMED} tools or platforms the job is mainly about, each "
     "as one product name from the posting (Kubernetes, not \"container orchestration\"). "
+    "In duties_met and duties_not_met, sort every duty the posting describes, a few words each, by whether a role "
+    "shows the candidate doing it. "
     f"In missing, name up to {MOST_MISSING_REQUIREMENTS} of the posting's most important requirements the resume "
     "does not show. Reply with the JSON object only."
 )
@@ -159,7 +164,8 @@ REASON, OPTION, MISSING, CORE_SKILLS_NAMED = "reason", "option", "missing", "cor
 
 def _schema_of_the_reply() -> dict:
     """Strict JSON: for every question a reason and then one of its options, and the missing requirements."""
-    properties = {CORE_SKILLS_NAMED: {"type": "array", "items": {"type": "string"}}}
+    list_of_names = {"type": "array", "items": {"type": "string"}}
+    properties = {CORE_SKILLS_NAMED: list_of_names, DUTIES_MET: list_of_names, DUTIES_NOT_MET: list_of_names}
     for question, details in RUBRIC.items():
         properties[question] = {
             "type": "object", "additionalProperties": False, "required": [REASON, OPTION],
@@ -270,6 +276,43 @@ def experience_from_the_dates(resume_text: str, job_text: str):
     return {OPTION: option, REASON: f"Counted from the dates: {worked:g} years in the roles, {asked} asked for."}
 
 
+# ── A result in the roles, in code ─────────────────────────────────────────────
+#
+# "Strong" evidence means roles that show results or scale. The model gave it to a résumé whose only results
+# were "reduced deployment failures" and "lower MTTR", with no figure behind either. So strong evidence needs
+# at least one number in a bullet: a percentage, an amount of money, a multiple, or a count of something.
+
+A_PERCENTAGE_AN_AMOUNT_OR_A_MULTIPLE = re.compile(r"\d\s?%|[$€£₹]\s?\d|\b\d+(?:\.\d+)?x\b", re.IGNORECASE)
+A_COUNT_OF_SOMETHING = re.compile(r"(?<![\w./-])(\d{1,3}(?:,\d{3})+|\d+)\+?\s+([a-z]{3,})")
+WORDS_THAT_ARE_NOT_A_THING_COUNTED = {"and", "the", "for", "with", "into", "from", "that", "this", "are", "was", "were"}
+NOT_STRONG = "adequate"
+NO_NUMBER_NOTE = "No figure is given in any role, so this cannot count as strong."
+
+
+def roles_state_a_result_in_numbers(resume_text: str) -> bool:
+    """Whether any bullet under a role gives a figure: 30%, $2M, 3x, or a count such as "40 teams"."""
+    for line in line_match._work_part_of(resume_text).splitlines():
+        if not line.lstrip().startswith("-"):
+            continue
+        if A_PERCENTAGE_AN_AMOUNT_OR_A_MULTIPLE.search(line):
+            return True
+        if any(_is_a_count(line, match) for match in A_COUNT_OF_SOMETHING.finditer(line)):
+            return True
+    return False
+
+
+def _is_a_count(line: str, match) -> bool:
+    """"40 teams" is a count. "Java 17 applications" is a version, and "2019 projects" is a year."""
+    number, thing = match.group(1).replace(",", ""), match.group(2)
+    words_before = line[:match.start()].lstrip("-•* ").split()
+    word_before = words_before[-1] if words_before else ""
+    # The verb that opens a bullet is capitalised too ("Supported 40 teams"), and is no product name.
+    is_a_name = word_before[:1].isupper() and len(words_before) > 1
+    names_a_version = is_a_name or any(character.isdigit() for character in word_before)
+    is_a_year = len(number) == 4 and number[:2] in ("19", "20")
+    return not names_a_version and not is_a_year and thing not in WORDS_THAT_ARE_NOT_A_THING_COUNTED
+
+
 # ── What the model reads ───────────────────────────────────────────────────────
 
 SKILLS_SECTION = "skills"
@@ -312,13 +355,15 @@ async def ats_score(resume_text: str, job_text: str, provider: str = PROVIDER, m
     """The score out of 100 with every part behind it, the model's reasons, and what the calls cost.
 
     Returns {"ats_score", "scorer", "model", "same_occupation", "core_skills_kept", "total_of_parts", "parts",
-    "rubric": [rows], "keywords", "core_skills", "missing", "times_asked", "input_tokens", "output_tokens",
-    "cost_usd"}. A rubric row is {"question", "asks", "option", "meaning", "share", "weight", "reason"}.
+    "rubric": [rows], "keywords", "core_skills", "duties", "missing", "times_asked", "remembered",
+    "input_tokens", "output_tokens", "cost_usd"}.
+    A rubric row is {"question", "asks", "option", "meaning", "option_share", "share", "weight", "reason"}:
+    option_share is what the option shown stands for, share is what the part earned over all the replies.
     Returns None when the model cannot be asked or none of its replies is usable.
     """
     remembered_as = _key_of(resume_text, job_text, provider, model)
     if remembered_as in _scores_remembered:
-        return _scores_remembered[remembered_as]
+        return {**_scores_remembered[remembered_as], "remembered": True}
 
     keywords = keyword_check(resume_text, job_text)
     prompt = _prompt(resume_text, job_text, keywords)
@@ -334,6 +379,10 @@ async def ats_score(resume_text: str, job_text: str, provider: str = PROVIDER, m
     if from_the_dates:
         answers[EXPERIENCE] = from_the_dates
         shares[EXPERIENCE] = RUBRIC[EXPERIENCE]["options"][from_the_dates[OPTION]][1]
+    duties = _duties_counted(all_answers)
+    shares[DUTIES] = duties["share"]
+    if not roles_state_a_result_in_numbers(resume_text):
+        _hold_the_evidence_below_strong(answers, shares)
     core_skills = core_skill_check(resume_text, _core_skills_most_replies_name(all_answers))
     shares[OCCUPATION] = RUBRIC[OCCUPATION]["options"][answers[OCCUPATION][OPTION]][1]
     shares[CORE_SKILLS] = _core_skills_share(answers[CORE_SKILLS][OPTION], core_skills["share"])
@@ -341,7 +390,8 @@ async def ats_score(resume_text: str, job_text: str, provider: str = PROVIDER, m
     output_tokens = sum(reply["output_tokens"] for reply in replies)
     score = score_from_shares(shares, keywords["share"], core_skills["share"])
     result = {**score, "scorer": "rubric", "model": replies[0]["model"] or model,
-              "rubric": _rubric_rows(answers, score["parts"]), "keywords": keywords, "core_skills": core_skills,
+              "rubric": _rubric_rows(answers, score["parts"], duties), "keywords": keywords,
+              "core_skills": core_skills, "duties": duties, "remembered": False,
               "missing": [str(item) for item in (answers.get(MISSING) or [])][:MOST_MISSING_REQUIREMENTS],
               "times_asked": len(replies), "input_tokens": input_tokens, "output_tokens": output_tokens,
               "cost_usd": calc_cost(provider, model, input_tokens, output_tokens)}
@@ -402,6 +452,37 @@ def _core_skills_share(middle_pick: str, share_the_roles_name):
     return min(from_the_pick, share_the_roles_name)
 
 
+def _share_of_duties_met(answers: dict):
+    """In one reply: the share of the duties it listed that it called met. None when it listed none."""
+    met, not_met = len(answers.get(DUTIES_MET) or []), len(answers.get(DUTIES_NOT_MET) or [])
+    return met / (met + not_met) if met + not_met else None
+
+
+def _duties_counted(all_answers: list) -> dict:
+    """The duties over all the replies: {"share", "met", "not_met"}.
+
+    share is the average of the replies that listed any duty, or None when most listed none. The two lists
+    are those of the reply whose share is the middle one.
+    """
+    counted = sorted(((_share_of_duties_met(answers), number) for number, answers in enumerate(all_answers)
+                      if _share_of_duties_met(answers) is not None))
+    if len(counted) <= len(all_answers) / 2:
+        return {"share": None, "met": [], "not_met": []}
+    middle = all_answers[counted[(len(counted) - 1) // 2][1]]
+    return {"share": round(sum(share for share, _number in counted) / len(counted), 2),
+            "met": [str(duty) for duty in middle.get(DUTIES_MET) or []],
+            "not_met": [str(duty) for duty in middle.get(DUTIES_NOT_MET) or []]}
+
+
+def _hold_the_evidence_below_strong(answers: dict, shares: dict) -> None:
+    """With no figure in any role, the evidence earns no more than the option below strong, and says why."""
+    most_it_can_earn = RUBRIC[EVIDENCE]["options"][NOT_STRONG][1]
+    if shares[EVIDENCE] <= most_it_can_earn:
+        return
+    shares[EVIDENCE] = most_it_can_earn
+    answers[EVIDENCE] = {OPTION: NOT_STRONG, REASON: NO_NUMBER_NOTE}
+
+
 def _average_shares(all_answers: list) -> dict:
     """For every question, the average of what the replies' picks stand for.
 
@@ -451,24 +532,44 @@ def _answers_in(reply_text: str) -> dict | None:
     return answers
 
 
-def _rubric_rows(answers: dict, parts: dict) -> list:
-    """One row per question. The share is what the part earned, which for core skills the code may have lowered."""
+def _rubric_rows(answers: dict, parts: dict, duties: dict) -> list:
+    """One row per part. The share is what the part earned, which code may have lowered or averaged."""
     rows = []
     for question, details in RUBRIC.items():
         option = answers[question][OPTION]
         meaning, share = details["options"][option]
         earned = parts.get(question, share)
         rows.append({"question": question, "asks": details["asks"], "option": option, "meaning": meaning,
-                     "share": None if earned is None else round(earned, 2), "weight": WEIGHT_OF_PART.get(question),
-                     "reason": str(answers[question].get(REASON) or "")})
+                     "option_share": share, "share": None if earned is None else round(earned, 2),
+                     "weight": WEIGHT_OF_PART.get(question), "reason": str(answers[question].get(REASON) or "")})
+    rows.insert(_place_of_the_duties_row(rows), _duties_row(duties))
     return rows
+
+
+def _place_of_the_duties_row(rows: list) -> int:
+    """Straight after the two skills rows, where it has always been shown."""
+    return 1 + max(number for number, row in enumerate(rows) if row["question"] in (CORE_SKILLS, OTHER_SKILLS))
+
+
+def _duties_row(duties: dict) -> dict:
+    met, not_met = duties["met"], duties["not_met"]
+    if duties["share"] is None:
+        meaning, reason, shown = "The posting describes no duties", "", None
+    else:
+        meaning = f"{len(met)} of {len(met) + len(not_met)} duties"
+        shown = round(len(met) / (len(met) + len(not_met)), 2)
+        reason = ("Not shown in a role: " + "; ".join(not_met[:MOST_DUTIES_NAMED_IN_A_REASON]) if not_met
+                  else "Every duty the posting describes is shown in a role.")
+    return {"question": DUTIES, "asks": DUTIES_ASKS, "option": COUNTED, "meaning": meaning, "option_share": shown,
+            "share": duties["share"], "weight": WEIGHT_OF_PART[DUTIES], "reason": reason}
 
 
 # ── Scoring, in code ───────────────────────────────────────────────────────────
 
-def score_from_picks(picks: dict, keyword_share, core_skills_used_share=None) -> dict:
-    """The score when every question has one pick."""
+def score_from_picks(picks: dict, keyword_share, core_skills_used_share=None, duties_share=None) -> dict:
+    """The score when every question has one pick and the duties have been counted."""
     shares = {question: RUBRIC[question]["options"][pick][1] for question, pick in picks.items()}
+    shares[DUTIES] = duties_share
     return score_from_shares(shares, keyword_share, core_skills_used_share)
 
 

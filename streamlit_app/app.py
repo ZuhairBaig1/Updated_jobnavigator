@@ -229,10 +229,10 @@ def _keyword_row(found: dict) -> dict:
     """The keyword match as a row of the table: it is a part of the score like the others, worked out by code."""
     used, listed, missing = (len(found.get(key) or []) for key in ("used", "listed", "missing"))
     share = found.get("share")
-    return {"Part": "Keyword match", "Picked": f"{used} of {used + listed + missing} keywords used in a role",
+    return {"Part": "Keyword match", "Picked": f"{used} of {used + listed + missing} keyword requirements used in a role",
             "Earned": "—" if share is None else f"{100 * share:.0f}%", "Weight": KEYWORD_WEIGHT,
             "Reason": f"Checked by code, word for word: {used} used in a role, {listed} only listed as a skill "
-                      f"(each counts 40%), {missing} not in the resume."}
+                      f"(each counts 40%), {missing} not in the resume. A choice of keywords counts once, by its best."}
 
 
 def _show_time_taken(score: dict):
@@ -273,6 +273,9 @@ def _show_rubric_score(score: dict):
     st.caption(f"Used in a role: {', '.join(found.get('used') or []) or 'none'}")
     st.caption(f"Only listed as a skill: {', '.join(found.get('listed') or []) or 'none'}")
     st.caption(f"Not in the resume: {', '.join(found.get('missing') or []) or 'none'}")
+    if found.get("alternatives_not_needed"):
+        st.caption("Alternatives the posting offered that were not needed, because another one is met: "
+                   + ", ".join(found["alternatives_not_needed"]))
     if score.get("input_tokens"):
         st.caption(f"{score.get('model')}: {score['input_tokens']} tokens in, {score['output_tokens']} out, "
                    f"${score.get('cost_usd', 0):.4f}")

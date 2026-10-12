@@ -52,7 +52,7 @@ MOST_MISSING_REQUIREMENTS = 3
 # How many times the model is asked. The middle pick of an odd number of answers needs no tie-break.
 TIMES_ASKED = 3
 # Changed whenever the rubric, the prompt or the arithmetic changes, so remembered scores are not reused.
-VERSION = "5"
+VERSION = "6"
 MOST_SCORES_REMEMBERED = 500
 
 
@@ -181,21 +181,84 @@ def _schema_of_the_reply() -> dict:
 SHARE_OF_A_KEYWORD_ONLY_LISTED = 0.4
 
 
-def keyword_check(resume_text: str, job_text: str) -> dict:
-    """Where the résumé names each of the posting's keywords, as the posting writes them, and the share that earns.
+# A line that offers a choice ("at least one of Clojure, TypeScript, Python", "Terraform or similar") is one
+# requirement, met by any one of the keywords it names. Counted keyword by keyword, a résumé with Python was
+# charged for lacking Clojure and TypeScript, which the posting never asked for together.
+A_CHOICE_ANYWHERE_IN_THE_LINE = re.compile(
+    r"\b(at least one|one of|any of|either|such as|e\.g|for example|for instance|similar|equivalent)\b", re.IGNORECASE)
+OR_BETWEEN_KEYWORDS = re.compile(r"\bor\b|/", re.IGNORECASE)
+PLACES, USED, LISTED, MISSING_KEYWORD = ("used", "listed", "missing"), "used", "listed", "missing"
+WORTH_OF_A_KEYWORD = {USED: 1.0, LISTED: SHARE_OF_A_KEYWORD_ONLY_LISTED, MISSING_KEYWORD: 0.0}
 
-    Returns {"used", "listed", "missing", "share"}. A keyword used in a role counts in full, one only listed
-    as a skill counts for less, and one not named counts for nothing. share is None when the posting names none.
+
+def keyword_check(resume_text: str, job_text: str) -> dict:
+    """Where the résumé names each keyword the posting asks for, as the posting writes them, and the share that earns.
+
+    Returns {"used", "listed", "missing", "alternatives_not_needed", "share"}. A keyword used in a role counts
+    in full, one only listed as a skill counts for less, and one not named counts for nothing. Keywords a line
+    offers as a choice are one requirement, judged by the best of them; the others it did not need are listed
+    apart. share is None when the posting names no keyword.
     """
-    wanted = {name: mention["as_written"] for name, mention in keyword_match.skills_in(clean_job_text(job_text)).items()
-              if mention["type"] == keyword_match.HARD_SKILL}
     in_the_work = set(keyword_match.skills_in(line_match._work_part_of(resume_text)))
     anywhere = set(keyword_match.skills_in(resume_text))
-    used = [written for name, written in wanted.items() if name in in_the_work]
-    listed = [written for name, written in wanted.items() if name in anywhere and name not in in_the_work]
-    missing = [written for name, written in wanted.items() if name not in anywhere]
-    share = (len(used) + SHARE_OF_A_KEYWORD_ONLY_LISTED * len(listed)) / len(wanted) if wanted else None
-    return {"used": used, "listed": listed, "missing": missing, "share": None if share is None else round(share, 2)}
+
+    def place_of(name: str) -> str:
+        return USED if name in in_the_work else LISTED if name in anywhere else MISSING_KEYWORD
+
+    found = {USED: [], LISTED: [], MISSING_KEYWORD: [], "alternatives_not_needed": []}
+    worth = []
+    for requirement in keyword_requirements(job_text):
+        best = max(requirement, key=lambda name: WORTH_OF_A_KEYWORD[place_of(name)])
+        place = place_of(best)
+        worth.append(WORTH_OF_A_KEYWORD[place])
+        if place == MISSING_KEYWORD:
+            found[place].append(" or ".join(requirement.values()))
+        else:
+            found[place].append(requirement[best])
+            found["alternatives_not_needed"] += [written for name, written in requirement.items()
+                                                 if name != best and place_of(name) == MISSING_KEYWORD]
+    for key in found:
+        found[key] = list(dict.fromkeys(found[key]))
+    found["alternatives_not_needed"] = [written for written in found["alternatives_not_needed"]
+                                        if written not in found[USED] + found[LISTED] + found[MISSING_KEYWORD]]
+    return {**found, "share": round(sum(worth) / len(worth), 2) if worth else None}
+
+
+def keyword_requirements(job_text: str) -> list:
+    """The posting's keywords as requirements: each a {standard name: as written} of one keyword, or of several
+    when a line offers them as a choice. A keyword asked for alone anywhere is a requirement on its own too."""
+    alone, choices = {}, []
+    for line in line_match.posting_lines(clean_job_text(job_text)):
+        keywords = {name: mention["as_written"] for name, mention in keyword_match.skills_in(line).items()
+                    if mention["type"] == keyword_match.HARD_SKILL}
+        if len(keywords) > 1 and _offers_its_keywords_as_a_choice(line, list(keywords.values())):
+            choices.append(keywords)
+        else:
+            alone.update(keywords)
+    asked_alone = [{name: written} for name, written in alone.items()]
+    # A choice every keyword of which is also asked for alone adds nothing.
+    choices_still_open = [choice for choice in choices if not set(choice) <= set(alone)]
+    return asked_alone + _without_repeats(choices_still_open)
+
+
+def _offers_its_keywords_as_a_choice(line: str, keywords_as_written: list) -> bool:
+    """A choice is worded as one ("such as", "at least one"), or has an "or" among the keywords themselves.
+
+    An "or" elsewhere in the line ("applications or services, using AWS and Docker") offers no choice of keywords.
+    """
+    if A_CHOICE_ANYWHERE_IN_THE_LINE.search(line):
+        return True
+    places = [line.lower().find(written.lower()) for written in keywords_as_written]
+    places = [place for place in places if place >= 0]
+    return bool(places) and bool(OR_BETWEEN_KEYWORDS.search(line[min(places):max(places)]))
+
+
+def _without_repeats(choices: list) -> list:
+    kept = []
+    for choice in choices:
+        if not any(set(choice) == set(other) for other in kept):
+            kept.append(choice)
+    return kept
 
 
 def core_skill_check(resume_text: str, named: list) -> dict:
@@ -339,6 +402,9 @@ def _prompt(resume_text: str, job_text: str, keywords: dict) -> str:
     keyword_lines = (f"Used in roles: {', '.join(keywords['used']) or 'none'}\n"
                      f"Only listed as skills: {', '.join(keywords['listed']) or 'none'}\n"
                      f"Not in the resume: {', '.join(keywords['missing']) or 'none'}")
+    if keywords.get("alternatives_not_needed"):
+        keyword_lines += ("\nAlternatives the posting offered and the resume did not need: "
+                          + ", ".join(keywords["alternatives_not_needed"]))
     posting = line_match.posting_as_plain_text(job_text)[:POSTING_MAX_CHARS]
     resume = _resume_without_its_skills_list(resume_text)[:RESUME_MAX_CHARS]
     return ("RUBRIC\n" + "\n".join(questions)

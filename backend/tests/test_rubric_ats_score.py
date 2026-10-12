@@ -53,7 +53,62 @@ def test_keywords_are_sorted_by_where_the_resume_names_them():
     assert found["used"] == ["Kubernetes"]
     assert found["listed"] == ["Terraform"]
     assert found["missing"] == ["Datadog"]
+    assert found["alternatives_not_needed"] == []
     assert found["share"] == round((1 + 0.4) / 3, 2)
+
+
+# ── A choice of keywords is one requirement, met by any one of them ────────────
+
+PYTHON_RESUME = "Jordan\n## Experience\nEngineer at Acme\n- Wrote Python services on AWS\n## Skills\nGrafana"
+
+
+def test_one_keyword_of_a_choice_meets_the_whole_requirement():
+    posting = "Requirements\n- Proficiency in at least one language (e.g. Clojure, TypeScript, Python)\n- AWS"
+
+    found = rubric.keyword_check(PYTHON_RESUME, posting)
+
+    assert found["used"] == ["AWS", "Python"]
+    assert found["missing"] == []
+    assert sorted(found["alternatives_not_needed"]) == ["Clojure", "TypeScript"]
+    assert found["share"] == 1.0
+
+
+def test_an_or_between_two_keywords_is_a_choice():
+    assert rubric.keyword_check(PYTHON_RESUME, "Requirements\n- Experience with AWS or Azure")["share"] == 1.0
+
+
+def test_a_choice_none_of_whose_keywords_the_resume_names_is_one_missing_requirement():
+    found = rubric.keyword_check(PYTHON_RESUME, "Requirements\n- Terraform or Pulumi\n- AWS")
+
+    assert found["missing"] == ["Terraform or Pulumi"]
+    assert found["share"] == 0.5
+
+
+def test_a_choice_is_judged_by_its_best_keyword():
+    found = rubric.keyword_check(PYTHON_RESUME, "Requirements\n- Monitoring tools such as Datadog, Grafana or Prometheus")
+
+    assert found["listed"] == ["Grafana"]           # only in the skills list, so the choice earns the listed share
+    assert found["share"] == 0.4
+
+
+def test_keywords_joined_by_and_are_each_required():
+    found = rubric.keyword_check(PYTHON_RESUME, "Requirements\n- Hands-on Kubernetes, Docker and AWS")
+
+    assert sorted(found["missing"]) == ["Docker", "Kubernetes"]
+    assert found["share"] == round(1 / 3, 2)
+
+
+def test_an_or_that_is_not_between_the_keywords_offers_no_choice():
+    found = rubric.keyword_check(PYTHON_RESUME, "Requirements\n- Build applications or services using AWS and Docker")
+
+    assert found["missing"] == ["Docker"]
+
+
+def test_a_keyword_also_asked_for_alone_is_required_whatever_a_choice_says():
+    found = rubric.keyword_check(PYTHON_RESUME, "Requirements\n- Python or TypeScript\n- Strong TypeScript skills")
+
+    assert found["missing"] == ["TypeScript"]
+    assert found["used"] == ["Python"]
 
 
 def test_a_posting_that_names_no_keyword_leaves_the_keyword_part_out():

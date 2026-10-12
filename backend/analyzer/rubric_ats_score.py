@@ -52,7 +52,7 @@ MOST_MISSING_REQUIREMENTS = 3
 # How many times the model is asked. The middle pick of an odd number of answers needs no tie-break.
 TIMES_ASKED = 3
 # Changed whenever the rubric, the prompt or the arithmetic changes, so remembered scores are not reused.
-VERSION = "8"
+VERSION = "9"
 MOST_SCORES_REMEMBERED = 500
 
 
@@ -155,7 +155,8 @@ SYSTEM_PROMPT = (
     "as one product name from the posting (Kubernetes, not \"container orchestration\"). "
     "In shown_another_way, for each keyword the keyword check gives as only listed or not in the resume: if a role "
     "shows the candidate using it under another name (a tool that is a kind of it, or a product built on it), give "
-    "the keyword and the name the role uses. Related work with no such name does not count. Leave out the rest. "
+    "the keyword and, in shown_by, that name copied word for word from the role and nothing else. An answer whose "
+    "shown_by is not written in a role is thrown away. Related work with no such name does not count. Leave out the rest. "
     "In duties_met and duties_not_met, sort every duty the posting describes, a few words each, by whether a role "
     "shows the candidate doing it. "
     f"In missing, name up to {MOST_MISSING_REQUIREMENTS} of the posting's most important requirements the resume "
@@ -240,14 +241,29 @@ def _keywords_summed_up(requirements: list, not_needed: list, shown_another_way:
 # A keyword the résumé only lists, or does not name, may still be shown in a role under another name:
 # Terraform is Infrastructure as Code, and EKS is Kubernetes. Word matching cannot see that, so the model
 # says which of those keywords a role shows and what the role calls it. It counts when most replies agree.
-def with_keywords_shown_another_way(keywords: dict, all_answers: list) -> dict:
-    """The keyword check with every requirement most replies say a role shows under another name counted as used."""
+#
+# The model has to quote the role, and a quote that is not in a role is thrown away. Without that, one reply
+# gave "Amazon EKS" as its reason on a résumé that never says EKS, and the keyword was counted all the same.
+# The model still makes the judgement; code only refuses a reason the résumé does not contain.
+SHORTEST_NAME_QUOTED = 2
+def with_keywords_shown_another_way(keywords: dict, all_answers: list, resume_text: str) -> dict:
+    """The keyword check with every requirement most replies say a role shows under another name counted as used.
+
+    A reply's answer counts only when the name it quotes is written in a role.
+    """
+    work = _as_plain_words(line_match._work_part_of(resume_text))
     said_by = {}
     for answers in all_answers:
         named = {}
         for item in answers.get(SHOWN_ANOTHER_WAY) or []:
-            if isinstance(item, dict) and str(item.get(KEYWORD) or "").strip() and str(item.get(SHOWN_BY) or "").strip():
-                named.setdefault(str(item[KEYWORD]).strip().lower(), str(item[SHOWN_BY]).strip())
+            if not isinstance(item, dict) or not str(item.get(KEYWORD) or "").strip():
+                continue
+            quoted = names_written_in_the_roles(str(item.get(SHOWN_BY) or ""), work)
+            if quoted:
+                named.setdefault(str(item[KEYWORD]).strip().lower(), quoted)
+            else:
+                logger.warning("Rubric: a reply said %r is shown by %r, which no role says — left out",
+                               item.get(KEYWORD), item.get(SHOWN_BY))
         for keyword, shown_by in named.items():
             said_by.setdefault(keyword, []).append(shown_by)
     agreed = {keyword: names[0] for keyword, names in said_by.items() if len(names) > len(all_answers) / 2}
@@ -260,6 +276,29 @@ def with_keywords_shown_another_way(keywords: dict, all_answers: list) -> dict:
             requirement = {**requirement, "place": USED}
         requirements.append(requirement)
     return _keywords_summed_up(requirements, keywords["alternatives_not_needed"], shown)
+
+
+def names_written_in_the_roles(quoted: str, work_as_plain_words: str) -> str:
+    """The part of what the model quoted that a role really says, or "" when none of it is there.
+
+    A reply may quote several names at once ("EKS, AKS and GKE"); the ones a role writes are kept.
+    """
+    whole = _as_plain_words(quoted)
+    if len(whole) >= SHORTEST_NAME_QUOTED and _is_written_in(whole, work_as_plain_words):
+        return quoted.strip()
+    pieces = [piece.strip() for piece in re.split(r",|;|\band\b|\bor\b|/", quoted) if piece.strip()]
+    found = [piece for piece in pieces
+             if len(_as_plain_words(piece)) >= SHORTEST_NAME_QUOTED and _is_written_in(_as_plain_words(piece), work_as_plain_words)]
+    return ", ".join(found)
+
+
+def _as_plain_words(text: str) -> str:
+    """Lower case, with every run of spaces and punctuation as one space, so a quote is compared on its words."""
+    return " ".join(re.findall(r"[a-z0-9+#.]+", (text or "").lower()))
+
+
+def _is_written_in(words: str, text: str) -> bool:
+    return f" {words} " in f" {text} "
 
 
 def _keyword_agreed_for(requirement: dict, agreed: dict):
@@ -489,7 +528,7 @@ async def ats_score(resume_text: str, job_text: str, provider: str = PROVIDER, m
         return None
 
     all_answers = [reply["answers"] for reply in replies]
-    keywords = with_keywords_shown_another_way(keywords, all_answers)
+    keywords = with_keywords_shown_another_way(keywords, all_answers, resume_text)
     answers = _middle_answers(all_answers)
     shares = _average_shares(all_answers)
     from_the_dates = experience_from_the_dates(resume_text, job_text)

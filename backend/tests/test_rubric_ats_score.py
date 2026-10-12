@@ -440,13 +440,15 @@ async def test_evidence_the_model_calls_strong_is_held_at_adequate_without_a_fig
 
 # ── A keyword a role shows under another name ──────────────────────────────────
 
+RESUME_WITH_OPENTOFU = RESUME.replace("- Ran Kubernetes clusters", "- Ran Kubernetes clusters\n- Provisioned networks with OpenTofu")
+
 @pytest.mark.asyncio
 async def test_a_keyword_most_replies_say_a_role_shows_another_way_counts_as_used(monkeypatch):
-    """Terraform is only in the skills list of this resume; the model says a role shows it as OpenTofu."""
+    """Terraform is only in the skills list of this resume; a role shows it as OpenTofu."""
     _model_replies(monkeypatch, _reply(another_way=[("Terraform", "OpenTofu")]), _reply(another_way=[("terraform", "OpenTofu")]),
                    _reply())
 
-    keywords = (await rubric.ats_score(RESUME, POSTING))["keywords"]
+    keywords = (await rubric.ats_score(RESUME_WITH_OPENTOFU, POSTING))["keywords"]
 
     assert "Terraform" in keywords["used"] and "Terraform" not in keywords["listed"]
     assert keywords["shown_another_way"] == [{"keyword": "Terraform", "shown_by": "OpenTofu"}]
@@ -478,3 +480,34 @@ def test_a_core_skill_shown_under_another_name_counts_as_named_in_the_roles():
 
     assert check["used"] == ["Kubernetes", "Terraform"]
     assert check["share"] == 1.0
+
+
+# ── The model cannot give a reason the résumé does not contain ─────────────────
+
+@pytest.mark.asyncio
+async def test_a_name_no_role_says_is_thrown_away_however_many_replies_give_it(monkeypatch):
+    """Every reply says Terraform is shown by Pulumi, and this resume never says Pulumi."""
+    _model_replies(monkeypatch, _reply(another_way=[("Terraform", "Pulumi")]))
+
+    keywords = (await rubric.ats_score(RESUME_WITH_OPENTOFU, POSTING))["keywords"]
+
+    assert keywords["shown_another_way"] == []
+    assert keywords["listed"] == ["Terraform"]
+
+
+@pytest.mark.asyncio
+async def test_a_name_only_in_the_skills_list_is_not_a_role_showing_it(monkeypatch):
+    _model_replies(monkeypatch, _reply(another_way=[("Datadog", "Linux")]))        # Linux is in the skills list only
+
+    assert (await rubric.ats_score(RESUME, POSTING))["keywords"]["shown_another_way"] == []
+
+
+def test_only_the_names_a_role_writes_are_kept_from_what_the_model_quotes():
+    work = rubric._as_plain_words("- Built clusters on Amazon EKS and Azure AKS\n- Wrote Terraform modules")
+
+    assert rubric.names_written_in_the_roles("Terraform", work) == "Terraform"
+    assert rubric.names_written_in_the_roles("terraform modules", work) == "terraform modules"
+    assert rubric.names_written_in_the_roles("EKS, AKS and GKE", work) == "EKS, AKS"
+    assert rubric.names_written_in_the_roles("Google GKE", work) == ""
+    assert rubric.names_written_in_the_roles("", work) == ""
+    assert rubric.names_written_in_the_roles("KS", work) == ""           # part of a word is not the word

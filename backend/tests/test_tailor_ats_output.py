@@ -753,6 +753,17 @@ async def test_haiku_on_openrouter_is_sent_no_temperature(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_gpt_6_luna_on_openrouter_is_sent_no_temperature(monkeypatch):
+    assert await _temperature_sent_to_openrouter(monkeypatch, "openai/gpt-6-luna") is None
+
+
+@pytest.mark.asyncio
+async def test_gpt_6_luna_on_openrouter_starts_unpinned():
+    import backend.analyzer.llm_client as L
+    assert L.openrouter_ladder("openai/gpt-6-luna") == (None,)
+
+
+@pytest.mark.asyncio
 async def test_other_openrouter_models_keep_their_temperature(monkeypatch):
     assert await _temperature_sent_to_openrouter(monkeypatch, "google/gemma-4-31b-it") == 0.2
 

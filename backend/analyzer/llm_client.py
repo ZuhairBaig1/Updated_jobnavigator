@@ -282,12 +282,14 @@ OPENROUTER_MODEL_LADDERS = {
     "openai/gpt-oss-safeguard-20b": (None,),
     # Checked 2026-10-09: neither default pin serves Haiku, so it starts unpinned.
     "anthropic/claude-haiku-5.5": (None,),
+    # Checked 2026-10-13: only OpenAI's own hosts serve it, so it starts unpinned.
+    "openai/gpt-6-luna": (None,),
 }
 
 
 # Models whose OpenRouter hosts refuse a request that sets a temperature ("No endpoints found that
-# can handle the requested parameters"), so none is sent. Checked 2026-10-09.
-OPENROUTER_MODELS_THAT_TAKE_NO_TEMPERATURE = {"anthropic/claude-haiku-5.5"}
+# can handle the requested parameters"), so none is sent. Haiku checked 2026-10-09, GPT-6 Luna 2026-10-13.
+OPENROUTER_MODELS_THAT_TAKE_NO_TEMPERATURE = {"anthropic/claude-haiku-5.5", "openai/gpt-6-luna"}
 
 
 def openrouter_ladder(model: str) -> tuple:

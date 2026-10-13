@@ -242,14 +242,24 @@ ENGINES = {
             "cv_tailor_llm_model": "anthropic/claude-haiku-5.5",
         },
     },
+    "Luna": {
+        "label": "OpenRouter — GPT-6 Luna",
+        "help": "GPT-6 Luna through OpenRouter for both jobs: about 25s to import a long résumé and 35s to tailor it. Works on a hosted backend, since it needs only the OpenRouter key.",
+        "settings": {
+            "parse_llm_provider": "openrouter",
+            "parse_llm_model": "openai/gpt-6-luna",
+            "cv_tailor_llm_provider": "openrouter",
+            "cv_tailor_llm_model": "openai/gpt-6-luna",
+        },
+    },
     "Codex": {
-        "label": "Codex — gpt-5.6-luna",
-        "help": "Both jobs on the Codex CLI with your ChatGPT plan. Slower, and local only — a hosted backend has no codex binary to run and no way to log one in.",
+        "label": "Codex — gpt-6-luna",
+        "help": "Both jobs on the Codex CLI with your ChatGPT plan, on GPT-6 Luna: about 40s to import a long résumé and 30s to tailor it. Local only — a hosted backend has no codex binary to run and no way to log one in.",
         "settings": {
             "parse_llm_provider": "codex_cli",
-            "parse_llm_model": "gpt-5.6-luna",
+            "parse_llm_model": "gpt-6-luna",
             "cv_tailor_llm_provider": "codex_cli",
-            "cv_tailor_llm_model": "gpt-5.6-luna",
+            "cv_tailor_llm_model": "gpt-6-luna",
         },
     },
     "Claude Code": {

@@ -208,6 +208,7 @@ DEFAULT_SETTINGS = {
         {"provider": "codex_cli", "model": "gpt-5.6-sol"},
         {"provider": "codex_cli", "model": "gpt-5.6-terra"},
         {"provider": "codex_cli", "model": "gpt-5.6-luna"},
+        {"provider": "codex_cli", "model": "gpt-6-luna"},
         {"provider": "codex_cli", "model": "gpt-5.5"},
         # Antigravity CLI — Google subscription. Slugs carry the reasoning effort;
         # `agy models` is the live catalog and it also serves non-Google models.
@@ -244,6 +245,7 @@ DEFAULT_SETTINGS = {
         {"provider": "openrouter", "model": "anthropic/claude-opus-5"},
         {"provider": "openrouter", "model": "anthropic/claude-sonnet-5"},
         {"provider": "openrouter", "model": "openai/gpt-5.6-luna"},
+        {"provider": "openrouter", "model": "openai/gpt-6-luna"},
         {"provider": "openrouter", "model": "openai/o3-pro"},
         {"provider": "openrouter", "model": "openai/o4-mini-high"},
         {"provider": "openrouter", "model": "google/gemini-3.7-flash"},

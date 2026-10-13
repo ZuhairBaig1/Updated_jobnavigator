@@ -25,7 +25,7 @@ database and a copy tailored here shows up there.
 - Every preview renders in **Word Classic**, whatever template the résumé has stored.
 - An **engine toggle** in the sidebar switches both résumé jobs between line-ups:
   OpenRouter (deepseek-v4.1-flash structures, gemma-4-31b tailors), Claude Haiku 5.5 through
-  OpenRouter (both jobs), Codex (gpt-5.6-luna for both), Claude Code on Sonnet 5.5 (both jobs) and Claude Code on Haiku 5.5 (both jobs). It writes through `PATCH /api/settings`, the same endpoint the
+  OpenRouter (both jobs), GPT-6 Luna through OpenRouter (both jobs), Codex (gpt-6-luna for both), Claude Code on Sonnet 5.5 (both jobs) and Claude Code on Haiku 5.5 (both jobs). It writes through `PATCH /api/settings`, the same endpoint the
   React frontend uses, so switching here switches there too.
 - Whatever it just made shows **how long it took** and which engine made it. For tailoring
   that is the backend's own `duration_seconds` rather than wall-clock, so the polling

@@ -28,7 +28,7 @@ RUN playwright install chromium
 # Install subscription-backed CLIs for Claude Code and Codex providers.
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs \
-    && npm install -g @anthropic-ai/claude-code @openai/codex@0.154.0 \
+    && npm install -g @anthropic-ai/claude-code @openai/codex@0.162.1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Antigravity CLI (Google subscription). The installer pins no version and the

@@ -1904,7 +1904,7 @@ async def ats_score_of_a_resume(resume_id: str, request_body: dict = None):
     the copy was tailored for is used. The reply is what line_match.ats_score returns.
 
     {"scorer": "rubric"} scores with one model call and a keyword check instead (rubric_ats_score.ats_score),
-    on the model named by {"model": "gemma" | "haiku"}.
+    on the model named by {"model": ...}, one of rubric_ats_score.MODELS.
     """
     from backend.analyzer import line_match, rubric_ats_score
 

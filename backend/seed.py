@@ -209,6 +209,8 @@ DEFAULT_SETTINGS = {
         {"provider": "codex_cli", "model": "gpt-5.6-terra"},
         {"provider": "codex_cli", "model": "gpt-5.6-luna"},
         {"provider": "codex_cli", "model": "gpt-6-luna"},
+        # An effort after a colon is passed to Codex (llm_client.CODEX_EFFORTS).
+        {"provider": "codex_cli", "model": "gpt-6-luna:high"},
         {"provider": "codex_cli", "model": "gpt-5.5"},
         # Antigravity CLI — Google subscription. Slugs carry the reasoning effort;
         # `agy models` is the live catalog and it also serves non-Google models.

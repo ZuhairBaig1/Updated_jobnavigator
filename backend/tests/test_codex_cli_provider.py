@@ -44,7 +44,8 @@ async def test_codex_cli_runs_ephemeral_read_only_and_parses_jsonl(monkeypatch):
         # emitted even on success (Code Mode unavailable); must not be mistaken for the answer or a failure
         {"type": "item.completed", "item": {"type": "error", "message": "Falling back from WebSockets to HTTPS"}},
         {"type": "item.completed", "item": {"type": "agent_message", "text": "  matched  "}},
-        {"type": "turn.completed", "usage": {"input_tokens": 81, "cached_input_tokens": 20, "output_tokens": 12}},
+        {"type": "turn.completed", "usage": {"input_tokens": 81, "cached_input_tokens": 20, "output_tokens": 12,
+                                             "reasoning_output_tokens": 5}},
     ]
     process = FakeProcess(stdout=_jsonl(events))
     calls = _install(monkeypatch, process)
@@ -69,7 +70,9 @@ async def test_codex_cli_runs_ephemeral_read_only_and_parses_jsonl(monkeypatch):
     assert set(llm_client.CODEX_FEATURES_TO_DISABLE) <= disabled
     assert result == {
         "text": "matched",
-        "usage": {"input_tokens": 81, "output_tokens": 12, "cache_read_tokens": 20, "cache_write_tokens": 0},
+        # 81 input with 20 of it cached is 61 fresh and 20 cached; the 5 thinking tokens are part of the 12 output
+        "usage": {"input_tokens": 61, "output_tokens": 12, "cache_read_tokens": 20, "cache_write_tokens": 0,
+                  "thinking_tokens": 5},
     }
 
 
@@ -172,3 +175,38 @@ async def test_call_llm_skips_retries_and_goes_to_fallback_on_non_retryable(monk
     res = await llm_client.call_llm("p", "s", 100)
     assert res["provider"] == "openai"
     assert attempts == ["codex_cli", "openai"]
+
+
+# ── An effort written after the model name ─────────────────────────────────────
+
+def test_an_effort_after_a_colon_is_split_from_the_model():
+    assert llm_client.codex_model_and_effort("gpt-6-luna:high") == ("gpt-6-luna", "high")
+
+
+def test_a_model_with_no_effort_is_left_alone():
+    assert llm_client.codex_model_and_effort("gpt-6-luna") == ("gpt-6-luna", "")
+
+
+def test_a_colon_followed_by_something_else_is_part_of_the_model_name():
+    assert llm_client.codex_model_and_effort("some-model:preview") == ("some-model:preview", "")
+
+
+async def _codex_command_for(monkeypatch, model):
+    events = [{"type": "item.completed", "item": {"type": "agent_message", "text": "ok"}},
+              {"type": "turn.completed", "usage": {"input_tokens": 1, "output_tokens": 1}}]
+    calls = _install(monkeypatch, FakeProcess(stdout=_jsonl(events)))
+    await llm_client._call_codex_cli("prompt", "system", model, 100)
+    return calls[1][0]
+
+
+@pytest.mark.asyncio
+async def test_codex_is_told_the_effort_named_with_the_model(monkeypatch):
+    args = await _codex_command_for(monkeypatch, "gpt-6-luna:high")
+    assert args[args.index("--model") + 1] == "gpt-6-luna"
+    assert 'model_reasoning_effort="high"' in args
+
+
+@pytest.mark.asyncio
+async def test_codex_is_told_no_effort_when_none_is_named(monkeypatch):
+    args = await _codex_command_for(monkeypatch, "gpt-6-luna")
+    assert not any("model_reasoning_effort" in str(part) for part in args)

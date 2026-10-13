@@ -117,6 +117,7 @@ SCORING_METHODS = {
     "Rubric — Gemma 4 31B": {"scorer": "rubric", "model": "gemma"},
     "Rubric — Claude Haiku 5.5": {"scorer": "rubric", "model": "haiku"},
     "Rubric — Haiku 5.5 on the Claude plan (local backend)": {"scorer": "rubric", "model": "haiku_plan"},
+    "Rubric — GPT-6 Luna, high effort, on the ChatGPT plan (local backend)": {"scorer": "rubric", "model": "luna_plan_high"},
     "Line by line — Jev": {"scorer": "jev"},
 }
 
@@ -260,6 +261,16 @@ ENGINES = {
             "parse_llm_model": "gpt-6-luna",
             "cv_tailor_llm_provider": "codex_cli",
             "cv_tailor_llm_model": "gpt-6-luna",
+        },
+    },
+    "Codex High": {
+        "label": "Codex — gpt-6-luna, high effort",
+        "help": "Both jobs on the Codex CLI with your ChatGPT plan, on GPT-6 Luna told to think harder: about 40s to import a long résumé and 40s to tailor it. It rewords far more bullets than the normal setting. Local only — a hosted backend has no codex binary to run and no way to log one in.",
+        "settings": {
+            "parse_llm_provider": "codex_cli",
+            "parse_llm_model": "gpt-6-luna:high",
+            "cv_tailor_llm_provider": "codex_cli",
+            "cv_tailor_llm_model": "gpt-6-luna:high",
         },
     },
     "Claude Code": {

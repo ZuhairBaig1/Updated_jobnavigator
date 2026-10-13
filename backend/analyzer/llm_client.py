@@ -762,6 +762,19 @@ CODEX_FEATURES_TO_DISABLE = (
 )
 
 
+# How hard Codex can be told to think. A model written "gpt-6-luna:high" runs gpt-6-luna at high effort;
+# with no effort named, Codex uses the model's own default.
+# Measured on gpt-6-luna tailoring a 76-bullet résumé (2026-10-13): at the default it does no thinking and
+# rewords 6 to 15 bullets, at high it rewords 22 to 46.
+CODEX_EFFORTS = ("low", "medium", "high", "xhigh", "max")
+
+
+def codex_model_and_effort(model: str) -> tuple:
+    """("gpt-6-luna", "high") for "gpt-6-luna:high", and (model, "") when no effort Codex knows is named."""
+    name, _, effort = (model or "").rpartition(":")
+    return (name, effort) if name and effort in CODEX_EFFORTS else (model, "")
+
+
 async def _call_codex_cli(prompt: str, system: str, model: str, max_tokens: int,
                           response_schema: dict | None = None) -> dict:
     """Call Codex CLI using its existing ChatGPT login, with its agent features switched off, in an empty read-only workspace."""
@@ -804,8 +817,11 @@ async def _call_codex_cli(prompt: str, system: str, model: str, max_tokens: int,
             ]
             for feature in CODEX_FEATURES_TO_DISABLE:
                 cmd.extend(["--disable", feature])
+            model, effort = codex_model_and_effort(model)
             if model:
                 cmd.extend(["--model", model])
+            if effort:
+                cmd.extend(["-c", f"model_reasoning_effort={_json.dumps(effort)}"])
             if schema_path:
                 cmd.extend(["--output-schema", schema_path])
             cmd.append("-")
@@ -816,7 +832,7 @@ async def _call_codex_cli(prompt: str, system: str, model: str, max_tokens: int,
     failed = ""      # turn.failed carries the one readable reason (401, usage limit, model unknown)
     last_error = ""  # transport-level `error` events, the fallback reason when the turn never fails
     usage = {"input_tokens": 0, "output_tokens": 0,
-             "cache_read_tokens": 0, "cache_write_tokens": 0}
+             "cache_read_tokens": 0, "cache_write_tokens": 0, "thinking_tokens": 0}
     for line in raw.splitlines():
         try:
             event = _json.loads(line)
@@ -829,10 +845,14 @@ async def _call_codex_cli(prompt: str, system: str, model: str, max_tokens: int,
                 text = item["text"]
         elif kind == "turn.completed":
             token_usage = event.get("usage") or {}
+            cached = token_usage.get("cached_input_tokens", 0) or 0
+            # Codex counts cached input inside its input, and thinking inside its output. The cached part is
+            # kept apart here, as it is for every other provider, so adding the two gives all the input once.
             usage.update({
-                "input_tokens": token_usage.get("input_tokens", 0) or 0,
+                "input_tokens": max((token_usage.get("input_tokens", 0) or 0) - cached, 0),
                 "output_tokens": token_usage.get("output_tokens", 0) or 0,
-                "cache_read_tokens": token_usage.get("cached_input_tokens", 0) or 0,
+                "cache_read_tokens": cached,
+                "thinking_tokens": token_usage.get("reasoning_output_tokens", 0) or 0,
             })
         elif kind == "turn.failed":
             failed = str((event.get("error") or {}).get("message") or "")

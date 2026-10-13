@@ -188,7 +188,8 @@ def test_a_skill_the_resume_does_not_have_is_left_out():
 def test_a_narrower_skill_is_printed_under_the_resumes_own_name():
     skills = [{"category": "Core", "skills": "Python, Javascript ES6+"}]
     copy = focused.build_focused_resume(_reply(technical_skills=skills), BASE, POSTING)
-    assert "JavaScript" in _skills_printed(copy) and "Javascript ES6+" not in _skills_printed(copy)
+    # the résumé's own skill, in the posting's spelling of that word, without the "ES6+" the résumé never states
+    assert "Javascript" in _skills_printed(copy) and "Javascript ES6+" not in _skills_printed(copy)
 
 
 def test_a_detail_in_brackets_the_resume_does_not_have_is_taken_off():
@@ -275,5 +276,158 @@ def test_a_requirement_the_resume_has_outside_its_bullets_is_not_a_gap():
 
 def test_a_reply_that_is_not_an_object_gives_the_base_cut_to_its_first_bullets():
     copy = focused.build_focused_resume(None, BASE, POSTING)
-    assert copy["summary"] == BASE["summary"] and copy["skills"] == BASE["skills"]
+    assert copy["summary"] == BASE["summary"]
+    assert {label: value.lower() for label, value in copy["skills"].items()} == \
+        {label: value.lower() for label, value in BASE["skills"].items()}
     assert all(len(role["bullets"]) == focused.FEWEST_BULLETS_OF_A_ROLE for role in copy["experience"])
+
+
+# ── The opening verb claims no more than the source ────────────────────────────
+
+def test_a_bullet_that_opens_by_claiming_more_goes_back_to_its_sources_verb():
+    roles = [{"role_number": 1, "bullets": [_bullet("Designed REST APIs with Python and FastAPI.", 1),
+                                            _bullet("Applied TDD on every service.", 3)]}]
+    copy = focused.build_focused_resume(_reply(work_experience=roles), BASE, POSTING)
+    assert _bullets(copy, 1)[0] == "Built REST APIs with Python and FastAPI."
+
+
+def test_a_verb_the_source_itself_uses_is_left_alone():
+    assert focused.with_the_verb_its_sources_use("Designed the API layer.", ["Designed and built the API layer."]) == "Designed the API layer."
+
+
+def test_an_ordinary_change_of_verb_is_left_alone():
+    assert focused.with_the_verb_its_sources_use("Developed REST APIs.", ["Built REST APIs."]) == "Developed REST APIs."
+
+
+# ── The complete copy: tailored as hard, nothing dropped ───────────────────────
+
+def _complete(**changes):
+    return focused.build_complete_resume(_reply(**changes), BASE, POSTING)
+
+
+def test_a_complete_copy_keeps_every_bullet_of_every_role():
+    copy = _complete()
+    assert [len(role["bullets"]) for role in copy["experience"]] == [4, 3]
+    assert "Organised the team's yearly offsite." in _bullets(copy, 1)
+
+
+def test_rewritten_bullets_come_first_and_the_rest_follow_as_written():
+    copy = _complete()
+    assert _bullets(copy, 1)[:2] == ["Built REST APIs with Python and FastAPI for 40 internal teams.",
+                                     "Applied TDD and unit tests on every service."]
+    assert set(_bullets(copy, 1)[2:]) == {"Cut report run time by 30% by tuning PostgreSQL queries.",
+                                          "Organised the team's yearly offsite."}
+
+
+def test_the_rest_follow_in_the_order_the_reply_asks_for():
+    roles = [{"role_number": 1, "bullets": [_bullet("Built REST APIs with Python and FastAPI.", 1)], "other_bullets": [4, 2]}]
+    copy = _complete(work_experience=roles)
+    assert _bullets(copy, 1)[1:] == ["Organised the team's yearly offsite.",
+                                     "Cut report run time by 30% by tuning PostgreSQL queries.",
+                                     "Wrote unit tests and followed TDD on every service."]
+
+
+def test_a_bullet_written_from_two_stands_for_both():
+    roles = [{"role_number": 1, "bullets": [_bullet("Built REST APIs with Python and FastAPI, with unit tests and TDD.", 1, 3)]}]
+    copy = _complete(work_experience=roles)
+    assert len(_bullets(copy, 1)) == 3 and "Wrote unit tests and followed TDD on every service." not in _bullets(copy, 1)
+
+
+def test_a_role_the_reply_never_mentions_keeps_all_its_bullets():
+    copy = _complete(work_experience=[])
+    assert _bullets(copy, 2) == BASE["experience"][1]["bullets"]
+
+
+def test_a_complete_copy_still_refuses_a_tool_the_role_never_names():
+    roles = [{"role_number": 1, "bullets": [_bullet("Built REST APIs with Python and FastAPI on Kubernetes.", 1)]}]
+    copy = _complete(work_experience=roles)
+    assert not any("Kubernetes" in bullet for bullet in _bullets(copy, 1))
+
+
+def test_a_complete_copy_keeps_every_skill_with_the_replys_groups_first():
+    copy = _complete()
+    printed = _skills_printed(copy)
+    assert list(copy["skills"])[0] == "Core" and printed[:2] == ["Python", "FastAPI"]
+    # "Javascript" and "Github" are the posting's spellings of two skills the résumé lists
+    assert {"Javascript", "SQL", "PostgreSQL", "SQL Server", "Redis", "Github", "Jenkins", "TDD", "Jira"} <= set(printed)
+
+
+def test_a_complete_copy_adds_no_skill_the_resume_lacks():
+    skills = [{"category": "Core", "skills": "Python, Kubernetes, Github Actions"}]
+    printed = _skills_printed(_complete(technical_skills=skills))
+    assert "Kubernetes" not in printed and "Github Actions" not in printed
+
+
+def test_a_skill_printed_under_the_postings_name_is_not_printed_twice():
+    names = [{"posting_name": "MSSQL", "resume_name": "SQL Server"}]
+    skills = [{"category": "Core", "skills": "Python, MSSQL"}]
+    printed = _skills_printed(_complete(same_thing_other_name=names, technical_skills=skills))
+    assert "MSSQL" in printed and "SQL Server" not in printed
+
+
+def test_a_complete_copy_keeps_the_own_headline_beside_the_postings_title():
+    header = _complete()["header"]
+    assert header["target_title"] == "Senior Python Engineer" and header["title"] == "Backend Developer"
+
+
+def test_the_complete_prompt_asks_for_the_other_bullets_and_the_focused_one_does_not():
+    assert "other_bullets" in focused.focused_prompt(BASE, POSTING, keeps_everything=True)
+    assert "other_bullets" not in focused.focused_prompt(BASE, POSTING)
+
+
+# ── Keywords are spelled exactly as the posting spells them ────────────────────
+
+def _requirement(text, has_it=True):
+    return {"requirement": text, "importance": "must_have", "resume_has_it": has_it, "shown_by": []}
+
+
+def test_keywords_are_taken_apart_and_kept_only_as_the_posting_writes_them():
+    requirements = [_requirement("POSTGRES, MSSQL"), _requirement("Test Driven Development"), _requirement("Docker Swarm"),
+                    _requirement("communication skills")]
+    assert focused.keywords_of_the_posting(requirements, POSTING) == ["POSTGRES", "MSSQL", "Test Driven Development"]
+
+
+def test_a_skill_the_resume_lists_is_a_keyword_when_the_posting_names_it_in_another_spelling():
+    assert "Github" in focused.keywords_of_the_posting([], POSTING, BASE)
+
+
+def test_a_duty_is_not_a_keyword():
+    duty = {"requirement": "MSSQL", "importance": "duty", "resume_has_it": True, "shown_by": []}
+    assert focused.keywords_of_the_posting([duty], POSTING) == []
+
+
+def test_the_postings_name_is_added_beside_a_skill_printed_under_the_resumes_name():
+    skills = focused.with_the_postings_name_beside_the_resumes({"Databases": "PostgreSQL, SQL Server"}, {"MSSQL": "SQL Server"})
+    assert skills == {"Databases": "PostgreSQL, SQL Server (MSSQL)"}
+
+
+def test_a_postings_name_already_printed_is_not_added_again():
+    skills = focused.with_the_postings_name_beside_the_resumes({"Databases": "PostgreSQL, MSSQL"}, {"MSSQL": "SQL Server"})
+    assert skills == {"Databases": "PostgreSQL, MSSQL"}
+
+
+def test_a_keyword_the_copy_holds_is_respelled_as_the_posting_spells_it():
+    assert focused.in_the_postings_spelling("Used GITHUB and test-driven development.", ["Github", "Test Driven Development"]) \
+        == "Used Github and Test Driven Development."
+
+
+def test_a_keyword_joined_another_way_is_respelled():
+    assert focused.in_the_postings_spelling("Built CI/CD pipelines.", ["CI / CD"]) == "Built CI / CD pipelines."
+
+
+def test_respelling_never_touches_a_longer_word_that_contains_the_keyword():
+    assert focused.in_the_postings_spelling("Tuned PostgreSQL and MySQL.", ["SQL"]) == "Tuned PostgreSQL and MySQL."
+
+
+def test_the_copy_spells_a_keyword_as_the_posting_does_in_skills_summary_and_bullets():
+    posting = POSTING.replace("Python, FastAPI", "PYTHON, FastAPI")
+    copy = focused.build_complete_resume(_reply(requirements=[_requirement("PYTHON")]), BASE, posting)
+    assert "PYTHON" in _skills_printed(copy) and "Python" not in copy["summary"]
+    assert not any("Python" in bullet for role in copy["experience"] for bullet in role["bullets"])
+
+
+def test_the_report_counts_each_keyword_in_the_skills_and_elsewhere():
+    copy = focused.build_complete_resume(_reply(requirements=[_requirement("FastAPI"), _requirement("Kubernetes", False)]), BASE, POSTING)
+    counted = {row["keyword"]: row for row in copy[focused.REPORT_KEY]["keywords"]}
+    assert counted["FastAPI"]["in_skills"] and counted["FastAPI"]["elsewhere"] >= 1
+    assert not counted["Kubernetes"]["in_skills"] and counted["Kubernetes"]["elsewhere"] == 0

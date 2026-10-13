@@ -776,7 +776,8 @@ async def tailor_resume(body: dict, db: Session = Depends(get_db)):
         raise HTTPException(400, "base_resume_id is required")
     if not job_id and not job_description:
         raise HTTPException(400, "Either job_id or job_description is required")
-    # "focused" rebuilds a short résumé for this one posting (focused_tailor); anything else keeps every relevant bullet.
+    # "focused" rebuilds a short résumé for this one posting and "complete" tailors as hard but drops nothing
+    # (both in focused_tailor); anything else is the older full tailoring.
     mode = str(body.get("mode") or "").strip().lower()
     if mode not in TAILORING_MODES:
         raise HTTPException(400, f"Unknown tailoring mode: {mode}")
@@ -878,9 +879,10 @@ async def _resolve_tailoring_jd(job, db=None) -> str:
     return job.cached_page_text or ""
 
 
-# The ways a résumé can be tailored: the full copy (the default) and the short one rebuilt for one posting.
-FULL_TAILORING, FOCUSED_TAILORING = "", "focused"
-TAILORING_MODES = (FULL_TAILORING, "full", FOCUSED_TAILORING)
+# The ways a résumé can be tailored: the full copy (the default), the short one rebuilt for one posting, and the
+# complete one that is tailored like the short one but keeps every bullet (both in focused_tailor).
+FULL_TAILORING, FOCUSED_TAILORING, COMPLETE_TAILORING = "", "focused", "complete"
+TAILORING_MODES = (FULL_TAILORING, "full", FOCUSED_TAILORING, COMPLETE_TAILORING)
 
 _TAILOR_SYSTEM_PROMPT = (
     "You are an expert ATS resume writer. You tailor a candidate's resume to one job "
@@ -1026,12 +1028,15 @@ async def _tailor_impl(base_resume_id: str, job_id: str | None, job_description_
         # Persona is NOT auto-merged into Resume-as-base tailoring: Resume-as-base uses
         # only the base resume's bullets; Persona-as-base uses the full pool via persona_tailor_prompt.
 
-        focused = mode == FOCUSED_TAILORING
+        # Both of these match the posting to the résumé before writing; the complete copy also keeps every bullet.
+        focused = mode in (FOCUSED_TAILORING, COMPLETE_TAILORING)
+        complete = mode == COMPLETE_TAILORING
         if focused:
             from backend.analyzer import focused_tailor
-            prompt = focused_tailor.focused_prompt(resume_sections, jd_text[:JD_MAX_CHARS])
+            prompt = focused_tailor.focused_prompt(resume_sections, jd_text[:JD_MAX_CHARS], keeps_everything=complete)
             system = focused_tailor.FOCUSED_SYSTEM_PROMPT
-            reply_schema, reply_schema_name = focused_tailor.FOCUSED_JSON_SCHEMA, focused_tailor.FOCUSED_SCHEMA_NAME
+            reply_schema = focused_tailor.COMPLETE_JSON_SCHEMA if complete else focused_tailor.FOCUSED_JSON_SCHEMA
+            reply_schema_name = focused_tailor.COMPLETE_SCHEMA_NAME if complete else focused_tailor.FOCUSED_SCHEMA_NAME
         else:
             prompt = prompt_template.replace("{resume_json}", _json.dumps(resume_sections, indent=2))
             prompt = prompt.replace("{job_description}", fence(jd_text[:JD_MAX_CHARS], "JOB POSTING"))
@@ -1090,7 +1095,8 @@ async def _tailor_impl(base_resume_id: str, job_id: str | None, job_description_
 
         if focused:
             # The focused builder has already put back the résumé's own sentence wherever a bullet claimed more.
-            tailored_data = focused_tailor.build_focused_resume(llm_result, base_data, jd_text, title_of_the_job)
+            tailored_data = focused_tailor.build_focused_resume(llm_result, base_data, jd_text, title_of_the_job,
+                                                                keeps_everything=complete)
         else:
             tailored_data = build_tailored_resume(llm_result, base_data, jd_text, title_of_the_job)
 
@@ -1107,7 +1113,7 @@ async def _tailor_impl(base_resume_id: str, job_id: str | None, job_description_
         if not job_id and jd_text:
             tailored_data["_tailor_context"] = {"job_description": jd_text[:JD_MAX_CHARS], "source": "freeform"}
 
-        kind = "focused" if focused else "tailored"
+        kind = mode if focused else "tailored"
         name = f"{base_name} \u2192 {job_name}" if job_name else f"{base_name} ({kind})"
 
         # -- Phase 3: persist the copy and chain the score --------------------

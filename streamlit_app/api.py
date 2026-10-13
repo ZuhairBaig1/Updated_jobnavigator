@@ -89,7 +89,21 @@ def get_preview_html(resume_id: str, template: str = "word") -> str:
                 timeout=PREVIEW_TIMEOUT, template=template).text
 
 
-def start_tailoring(base_resume_id: str, job_description: str) -> str:
+# The ways of tailoring the toggle offers: what the backend is asked for, and what the user is told.
+TAILORING_WAYS = {
+    "Full — keep every relevant bullet": {
+        "mode": "full",
+        "help": "Rewords and reorders the whole résumé towards the posting and keeps every bullet that is relevant to it.",
+    },
+    "Focused — two pages, only what this job asks for": {
+        "mode": "focused",
+        "help": "Rebuilds a short résumé for this one posting: the posting's title on top, the bullets that serve it "
+                "reworded in its own words, the rest dropped. Nothing is added that the original does not say.",
+    },
+}
+
+
+def start_tailoring(base_resume_id: str, job_description: str, way: str = "") -> str:
     """Kick off a tailoring run against pasted JD text; returns its run id.
 
     The backend accepts either a job_id or raw job_description. This app only ever
@@ -98,7 +112,8 @@ def start_tailoring(base_resume_id: str, job_description: str) -> str:
     try:
         r = requests.post(f"{base_url()}/api/resumes/tailor", headers=_headers(),
                           json={"base_resume_id": base_resume_id,
-                                "job_description": job_description},
+                                "job_description": job_description,
+                                "mode": TAILORING_WAYS.get(way, {}).get("mode", "")},
                           timeout=TIMEOUT)
     except requests.RequestException as e:
         raise BackendError(f"Could not reach the backend at {base_url()}: {e}") from e

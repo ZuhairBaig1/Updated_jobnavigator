@@ -551,6 +551,8 @@ with left:
                     jd = st.text_area("Paste the job description", height=220,
                                       key=f"jdtext-{base_id}",
                                       placeholder="Paste the full posting here…")
+                    way = st.radio("How to tailor", list(api.TAILORING_WAYS), key=f"way-{base_id}",
+                                   captions=[w["help"] for w in api.TAILORING_WAYS.values()])
                     go, cancel = st.columns(2)
                     submitted = go.form_submit_button("Tailor", type="primary",
                                                       use_container_width=True)
@@ -565,7 +567,7 @@ with left:
                         st.warning("Paste a job description first.")
                     else:
                         try:
-                            run_id = api.start_tailoring(base_id, jd.strip())
+                            run_id = api.start_tailoring(base_id, jd.strip(), way)
                         except api.BackendError as e:
                             st.error(str(e))
                             run_id = None

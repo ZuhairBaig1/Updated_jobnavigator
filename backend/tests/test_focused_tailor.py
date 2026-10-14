@@ -565,6 +565,51 @@ def test_no_more_than_the_allowed_number_of_bullets_is_swapped_in_a_role():
     first = LONG["experience"][0]
     bullets = first["bullets"][:5] + ["Used Redis.", "Used Kafka.", "Used Docker."]
     long = {**LONG, "experience": [{**first, "bullets": bullets}] + LONG["experience"][1:]}
-    requirements = [{"name": name, "kind": "must", "has": True, "by": []} for name in ("Redis", "Kafka", "Docker")]
+    # nice-to-haves: only a must may take more swaps than this
+    requirements = [{"name": name, "kind": "nice", "has": True, "by": []} for name in ("Redis", "Kafka", "Docker")]
     copy = focused.build_focused_resume(_reply(requirements=requirements, work_experience=_written(1, 2, 3, 4, 5)), long, POSTING)
     assert copy[focused.REPORT_KEY]["bullets_swapped_in"] == focused.MOST_SWAPS_IN_A_ROLE
+
+
+def test_a_bullet_naming_one_keyword_of_a_longer_requirement_is_credited_with_it():
+    assert focused._names_the_requirement("Built screens in React.js.", "React.js and modern frontend development practices")
+    assert not focused._names_the_requirement("Built screens in Angular.", "React.js and modern frontend development practices")
+
+
+def test_one_unsupported_item_is_taken_out_of_a_bullets_list_and_the_rewrite_stays():
+    roles = [{"role_number": 1, "bullets": [_bullet("Built REST APIs with Python, FastAPI, Kubernetes, and Docker for 40 internal teams.", 1)]}]
+    base = {**BASE, "experience": [{**BASE["experience"][0], "bullets": ["Built REST APIs with Python, FastAPI and Docker for 40 internal teams."]}]}
+    copy = focused.build_focused_resume(_reply(work_experience=roles), base, POSTING)
+    assert _bullets(copy, 1) == ["Built REST APIs with Python, FastAPI, and Docker for 40 internal teams."]
+
+
+def test_a_requirement_naming_several_keywords_is_taken_apart():
+    matched = focused.requirements_matched({"requirements": [{"name": "Python, Pandas, and FastAPI", "kind": "must", "has": True, "by": ["1.1"]}]},
+                                           BASE["experience"])
+    assert [m["requirement"] for m in matched] == ["Python", "Pandas", "FastAPI"]
+    assert all(m["importance"] == "must" and m["shown_by"] == [(1, 1)] for m in matched)
+
+
+def test_a_requirement_that_is_a_sentence_stays_whole():
+    matched = focused.requirements_matched({"requirements": [{"name": "Collaborate with product managers, architects and QA teams", "kind": "duty", "has": True, "by": []}]},
+                                           BASE["experience"])
+    assert [m["requirement"] for m in matched] == ["Collaborate with product managers, architects and QA teams"]
+
+
+def test_every_must_the_resume_names_in_a_bullet_ends_up_in_a_chosen_bullet():
+    first = LONG["experience"][0]
+    bullets = first["bullets"][:5] + ["Used Redis.", "Used Kafka.", "Used Docker."]
+    long = {**LONG, "experience": [{**first, "bullets": bullets}] + LONG["experience"][1:]}
+    requirements = [{"name": "Redis, Kafka, Docker", "kind": "must", "has": True, "by": []}]
+    copy = focused.build_focused_resume(_reply(requirements=requirements, work_experience=_written(1, 2, 3, 4, 5)), long, POSTING)
+    assert {"Used Redis.", "Used Kafka.", "Used Docker."} <= set(_bullets(copy, 1)) and len(_bullets(copy, 1)) == 5
+
+
+def test_a_clause_is_never_cut_out_of_a_sentence_as_if_it_were_a_list_item():
+    sentence = "Built apps using Java, Spring Boot, and Kubernetes clusters for patient and provider workflows, and billing."
+    assert focused._without_the_list_items_naming(sentence, ["Kubernetes"]) == ""
+
+
+def test_a_short_list_item_is_still_taken_out():
+    assert focused._without_the_list_items_naming("Built apps using Java, Kubernetes, and Spring Boot.", ["Kubernetes"]) \
+        == "Built apps using Java, and Spring Boot."

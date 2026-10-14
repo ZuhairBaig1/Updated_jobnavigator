@@ -450,6 +450,13 @@ def focused_bullets(reply_bullets: list, base_bullets: list, allowed_text: str, 
         its_sources = " ".join(base_bullets[n - 1] for n in sources)
         too_much = [name for name in too_much if not _every_word_is_stated_in(name, its_sources)]
         if too_much:
+            # One unsupported item in a list costs that item, not the whole rewrite and the keywords it carries.
+            shorter = _without_the_list_items_naming(text, too_much)
+            if shorter and not unsupported_in(shorter, allowed_text, vocabulary, other_names, prose=" ".join(base_bullets)):
+                logger.warning("Focused tailor: a bullet listed %s, which its role does not — taken out of the list",
+                               ", ".join(too_much[:6]))
+                text, too_much = shorter, []
+        if too_much:
             logger.warning("Focused tailor: a bullet stated %s, which its role does not — keeping the résumé's own sentence",
                            ", ".join(too_much[:6]))
             text, sources = base_bullets[sources[0] - 1], sources[:1]
@@ -460,10 +467,16 @@ def focused_bullets(reply_bullets: list, base_bullets: list, allowed_text: str, 
 
 
 def _names_the_requirement(text: str, requirement: str) -> bool:
-    """Whether a bullet names a requirement short enough to be a keyword, however it spells it."""
-    if not requirement or len(requirement.split()) > MOST_WORDS_IN_A_KEYWORD or len(rs._squash(requirement)) < 2:
-        return False
-    return _however_it_is_spelled(requirement).search(text or "") is not None
+    """Whether a bullet names a requirement, or one of the keywords a longer requirement is made of, however it spells it.
+
+    "React.js and modern frontend development practices" is named by a bullet that says "React.js".
+    """
+    for part in [requirement] + _KEYWORD_PARTS.split(requirement or ""):
+        part = part.strip(" .:")
+        if part and len(part.split()) <= MOST_WORDS_IN_A_KEYWORD and len(rs._squash(part)) >= 2 \
+                and _however_it_is_spelled(part).search(text or ""):
+            return True
+    return False
 
 
 def bullets_a_role_gets(role_number: int) -> int:
@@ -531,6 +544,46 @@ def _what_the_copy_shows(bullets_of_each_role: list, requirements: list) -> int:
     return _worth(shown, requirements) + (WORTH_OF_A_MEASURED_RESULT if states_a_result else 0)
 
 
+def _with_every_must_in_a_bullet(bullets_of_each_role: list, roles: list, requirements: list) -> int:
+    """For each must the résumé names in some bullet but no chosen bullet names, swaps that bullet in, as written.
+
+    A screener counts a core skill only when a role shows it, so this is not limited to one swap a role. It takes the
+    most recent role that has such a bullet, and replaces the chosen bullet there (never one of the first two) whose
+    loss costs least, provided that loss is not itself a must no other bullet names.
+    """
+    swapped = 0
+    named_by = lambda bullets, keyword: any(_names_the_requirement(bullet["text"], keyword) for bullet in bullets)
+    for requirement in requirements:
+        keyword = requirement["requirement"]
+        if requirement["importance"] != MUST_HAVE or any(named_by(bullets, keyword) for bullets in bullets_of_each_role):
+            continue
+        for role_number, role in enumerate(roles, start=1):
+            chosen = bullets_of_each_role[role_number - 1]
+            found = next(((number, text) for number, text in enumerate(role.get("bullets") or [], start=1)
+                          if isinstance(text, str) and _names_the_requirement(text, keyword)
+                          and not any(number in bullet["from"] for bullet in chosen)), None)
+            if not found or len(chosen) <= BULLETS_NEVER_SWAPPED_OUT:
+                continue
+            now = _what_the_copy_shows(bullets_of_each_role, requirements)
+            candidate = {"text": found[1], "from": [found[0]], "as_written": True}
+
+            def cost(at):
+                was, chosen[at] = chosen[at], candidate
+                loss = now - _what_the_copy_shows(bullets_of_each_role, requirements)
+                lost_a_must = any(r["importance"] == MUST_HAVE and _names_the_requirement(was["text"], r["requirement"])
+                                  and not any(named_by(bullets, r["requirement"]) for bullets in bullets_of_each_role) for r in requirements)
+                chosen[at] = was
+                return (lost_a_must, loss)
+
+            weakest = min(range(BULLETS_NEVER_SWAPPED_OUT, len(chosen)), key=lambda at: (cost(at), -at))
+            if cost(weakest)[0]:
+                continue
+            chosen[weakest] = candidate
+            swapped += 1
+            break
+    return swapped
+
+
 def improved_by_swaps(bullets_of_each_role: list, roles: list, requirements: list) -> int:
     """Trades a chosen bullet for one of the résumé's own wherever that makes the copy show more of the posting.
 
@@ -539,7 +592,7 @@ def improved_by_swaps(bullets_of_each_role: list, roles: list, requirements: lis
     the copy stays the reply's own selection. A bullet swapped in prints as the résumé wrote it.
     Changes bullets_of_each_role in place and returns how many bullets it swapped.
     """
-    swapped = 0
+    swapped = _with_every_must_in_a_bullet(bullets_of_each_role, roles, requirements)
     for role_number, role in enumerate(roles, start=1):
         chosen = bullets_of_each_role[role_number - 1]
         base_bullets = [b for b in role.get("bullets") or [] if isinstance(b, str)]
@@ -601,9 +654,23 @@ def requirements_matched(reply: dict, roles: list) -> list:
             role, bullet = (int(written.group(1)), int(written.group(2))) if written else (0, 0)
             if 1 <= role <= len(roles) and 1 <= bullet <= len(roles[role - 1].get("bullets") or []):
                 shown_by.append((role, bullet))
-        matched.append({"requirement": rs._text(entry["name"]), "importance": entry.get("kind"),
-                        "shown_by": shown_by, "resume_has_it": bool(entry.get("has")) or bool(shown_by)})
+        for name in _one_keyword_each(rs._text(entry["name"])):
+            matched.append({"requirement": name, "importance": entry.get("kind"),
+                            "shown_by": shown_by, "resume_has_it": bool(entry.get("has")) or bool(shown_by)})
     return matched
+
+
+def _one_keyword_each(requirement: str) -> list:
+    """A requirement that names several keywords as one ("Python, Pandas, and FastAPI"), taken apart into one each.
+
+    Otherwise a bullet naming Python would count as showing Pandas too. A requirement that is not a list stays whole.
+    """
+    parts = [part.strip(" .:") for part in _KEYWORD_PARTS.split(requirement)]
+    parts = [part for part in parts if part]
+    # Only a list of names is taken apart; "product managers, architects and QA teams" is one duty.
+    if len(parts) < 2 or any(len(part.split()) > MOST_WORDS_IN_A_KEYWORD or part == part.lower() for part in parts):
+        return [requirement]
+    return parts
 
 
 # ── Summary and skills ─────────────────────────────────────────────────────────
@@ -622,6 +689,11 @@ def _without_the_list_items_naming(sentence: str, names: list) -> str:
     kept = [item for item in items if not any(_is_stated(name, item) for name in names)]
     if len(kept) < 2 or len(kept) == len(items) or kept[0] != items[0]:
         return ""   # nothing to take out, too little left, or the opening of the sentence itself is the trouble
+    # Only a short item of a list may go. A longer one is a clause carrying the rest of the sentence
+    # ("and microservices, supporting patient workflows"), and taking it out leaves nonsense.
+    taken_out = [item for item in items if item not in kept]
+    if any(len(re.sub(r"^(and|or)\s+", "", item.rstrip(".")).split()) > MOST_WORDS_IN_A_KEYWORD for item in taken_out):
+        return ""
     if kept[-1] != items[-1]:
         last = kept[-1].rstrip(".")
         kept[-1] = (last if last.startswith("and ") else f"and {last}") + "."

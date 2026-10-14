@@ -613,3 +613,13 @@ def test_a_clause_is_never_cut_out_of_a_sentence_as_if_it_were_a_list_item():
 def test_a_short_list_item_is_still_taken_out():
     assert focused._without_the_list_items_naming("Built apps using Java, Kubernetes, and Spring Boot.", ["Kubernetes"]) \
         == "Built apps using Java, and Spring Boot."
+
+
+def test_an_item_that_carries_more_than_the_name_is_not_cut():
+    sentence = "Built apps using Java, Spring Boot, and microservices architecture for patient, provider, and billing workflows."
+    assert focused._without_the_list_items_naming(sentence, ["microservices architecture"]) == ""
+
+
+def test_the_item_that_closes_a_list_in_mid_sentence_is_not_cut():
+    sentence = "Built apps using Java, Spring Boot, and Kubernetes, supporting patient, provider, and clinical workflows."
+    assert focused._without_the_list_items_naming(sentence, ["Kubernetes"]) == ""

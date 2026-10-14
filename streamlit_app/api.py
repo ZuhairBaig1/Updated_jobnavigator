@@ -90,7 +90,7 @@ def get_preview_html(resume_id: str, template: str = "word") -> str:
 
 
 # The ways of tailoring the toggle offers: what the backend is asked for, and what the user is told.
-# The first one is the one selected when the box opens.
+# The first one is the one selected when the box opens. The backend's older "full" tailoring is not offered here.
 TAILORING_WAYS = {
     "Complete — tailored hard, nothing dropped": {
         "mode": "complete",
@@ -100,12 +100,9 @@ TAILORING_WAYS = {
     },
     "Focused — two pages, only what this job asks for": {
         "mode": "focused",
-        "help": "Rebuilds a short résumé for this one posting: the posting's title on top, the bullets that serve it "
-                "reworded in its own words, the rest dropped. Nothing is added that the original does not say.",
-    },
-    "Full — keep every relevant bullet": {
-        "mode": "full",
-        "help": "Rewords and reorders the whole résumé towards the posting and keeps every bullet that is relevant to it.",
+        "help": "Rebuilds a short résumé for this one posting: the posting's title on top, five bullets for your latest "
+                "role, four for the one before and three for each earlier one, reworded in the posting's own words. "
+                "Every role stays. Nothing is added that the original does not say.",
     },
 }
 

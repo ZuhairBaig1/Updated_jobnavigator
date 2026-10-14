@@ -678,6 +678,14 @@ def _one_keyword_each(requirement: str) -> list:
 FEWEST_ITEMS_IN_A_LIST = 3
 
 
+MOST_WORDS_BESIDE_THE_NAME = 1
+
+
+def _is_little_more_than(item: str, names: list) -> bool:
+    """Whether a list item is just one of the names, give or take a word ("Kubernetes clusters"), and not a clause."""
+    return any(_is_stated(name, item) and len(item.split()) <= len(name.split()) + MOST_WORDS_BESIDE_THE_NAME for name in names)
+
+
 def _without_the_list_items_naming(sentence: str, names: list) -> str:
     """A sentence that lists things, without the items that name any of `names`; "" when it is not such a list.
 
@@ -691,8 +699,12 @@ def _without_the_list_items_naming(sentence: str, names: list) -> str:
         return ""   # nothing to take out, too little left, or the opening of the sentence itself is the trouble
     # Only a short item of a list may go. A longer one is a clause carrying the rest of the sentence
     # ("and microservices, supporting patient workflows"), and taking it out leaves nonsense.
-    taken_out = [item for item in items if item not in kept]
-    if any(len(re.sub(r"^(and|or)\s+", "", item.rstrip(".")).split()) > MOST_WORDS_IN_A_KEYWORD for item in taken_out):
+    taken_out = [re.sub(r"^(and|or)\s+", "", item.rstrip(".")) for item in items if item not in kept]
+    if not all(_is_little_more_than(item, names) for item in taken_out):
+        return ""
+    # An item that closes a list in the middle of a sentence ("Java, Spring Boot, and X, supporting ...") takes
+    # the list's "and" with it, and what is left does not read; the sentence is not cut then.
+    if any(re.match(r"(and|or)\s", item) and at != len(items) - 1 for at, item in enumerate(items) if item not in kept):
         return ""
     if kept[-1] != items[-1]:
         last = kept[-1].rstrip(".")

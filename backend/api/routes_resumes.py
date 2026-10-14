@@ -19,7 +19,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from backend.models.db import get_db, Resume, TracerLink, TracerClickEvent, Setting, Job, Application, SessionLocal, utcnow, Persona
 from backend.api._input import str_field
 from backend.analyzer.model_json import UNPARSEABLE_MESSAGE, ModelReplyError, parse_model_json
-from backend.analyzer.llm_client import LLMTimeoutError
+from backend.analyzer.llm_client import LLMTimeoutError, NonRetryableLLMError
 from backend.analyzer.prompt_fence import fence
 from backend.analyzer.resume_schema import (ATS_LAYOUT, BASE_RESUME_JSON_SCHEMA, BASE_SCHEMA_NAME,
                                             LAYOUT_KEY, RESUME_JSON_SCHEMA, RESUME_SCHEMA_NAME,
@@ -1906,6 +1906,7 @@ OUT_OF_CREDIT_MESSAGE = ("The OpenRouter account is out of credit, so this scori
                          "Add credit at openrouter.ai/settings/credits, or choose the Claude plan scoring method.")
 # Not 502: a proxy in front of the backend replaces a 502 with its own error page, and the message is lost.
 SCORING_MODEL_UNAVAILABLE = 503
+PLAN_UNAVAILABLE = 429   # a ChatGPT or Claude plan's usage limit is reached, or its login has gone
 
 
 def _resume_text_and_its_job_description(resume_id: str) -> tuple:
@@ -1952,7 +1953,11 @@ async def ats_score_of_a_resume(resume_id: str, request_body: dict = None):
         if model_name not in rubric_ats_score.MODELS:
             raise HTTPException(status_code=400, detail=f"Unknown scoring model: {model_name}")
         provider, model = rubric_ats_score.MODELS[model_name]
-        result = await rubric_ats_score.ats_score(resume_text, job_description, provider, model)
+        try:
+            result = await rubric_ats_score.ats_score(resume_text, job_description, provider, model)
+        except NonRetryableLLMError as error:
+            # The plan's usage limit is used up, or its login is gone: retrying now would not help, so say why.
+            raise HTTPException(status_code=PLAN_UNAVAILABLE, detail=str(error)[:400])
     else:
         result = await line_match.ats_score(ATS_SCORER, resume_text, job_description, title_lines)
     if result is None:

@@ -241,7 +241,9 @@ async def test_a_failed_call_or_a_reply_that_is_not_json_gives_no_score(monkeypa
 def test_the_models_a_caller_may_name():
     assert rubric.MODELS == {"gemma": ("openrouter", "google/gemma-4-31b-it"),
                              "haiku": ("openrouter", "anthropic/claude-haiku-5.5"),
+                             "luna": ("openrouter", "openai/gpt-6-luna"),
                              "haiku_plan": ("claude_code", "claude-haiku-5-5"),
+                             "luna_plan": ("codex_cli", "gpt-6-luna"),
                              "luna_plan_high": ("codex_cli", "gpt-6-luna:high")}
 
 

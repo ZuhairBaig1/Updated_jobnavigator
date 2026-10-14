@@ -82,7 +82,8 @@ _PROMPT = """Rebuild the resume below for the job posting below.
 
 STEP 1 - READ THE POSTING AND THE CONTACT LINE
 - In header, copy the candidate's location and work authorization (a visa or citizenship status) exactly as the resume's contact line prints them, or leave each empty when it prints none.
-- Its job title is its heading, normally the first line, without the company or the place. A phrase in the body such as "we are seeking a ..." is not the title. Copy the title word for word into target_job_title.
+- target_job_title is the name of the job this posting hires for, copied word for word as the posting writes it, without the company or the place. Look for it in this order: a title heading, or a "Job Title:", "Position:" or "Designation:" line; then the job the text says it is hiring for ("We are looking for a Senior Python Backend Engineer" gives "Senior Python Backend Engineer"); a job board's "Role:" or category field only when there is nothing else.
+- It is never a section heading ("Summary", "Job Description", "About the Role", "Overview"), a company, a location or a type of employment. Leave it empty when the posting names no job.
 - Note what it requires (must-haves), what it prefers (nice-to-haves), the duties, and the exact spelling it uses for each skill.
 
 STEP 2 - MATCH THE RESUME TO IT
@@ -621,16 +622,29 @@ def _with_all_the_rest(bullets: list, order_asked_for, base_bullets: list) -> li
     """The rewritten bullets, then every bullet of the role none of them was written from, as the résumé wrote it.
 
     Those follow in the order the reply asked for; any it forgot come last, in the résumé's own order. Nothing is lost.
+    A bullet a rewrite already says nearly all of is not printed again: the reply sometimes names the wrong source.
     """
     covered = {number for bullet in bullets for number in bullet["from"]}
+    rewritten = [b["text"] for b in bullets]
     asked_for = [n for n in order_asked_for or [] if isinstance(n, int) and 1 <= n <= len(base_bullets)]
     for number in asked_for + list(range(1, len(base_bullets) + 1)):
         if number in covered:
             continue
         covered.add(number)
-        if base_bullets[number - 1] not in [b["text"] for b in bullets]:
-            bullets = bullets + [{"text": base_bullets[number - 1], "from": [number], "as_written": False}]
+        text = base_bullets[number - 1]
+        if text not in [b["text"] for b in bullets] and not any(_says_nearly_all_of(other, text) for other in rewritten):
+            bullets = bullets + [{"text": text, "from": [number], "as_written": False}]
     return bullets
+
+
+SHARE_OF_WORDS_THAT_MAKES_A_REPEAT = 0.8
+
+
+def _says_nearly_all_of(rewrite: str, original: str) -> bool:
+    """Whether a rewritten bullet already holds nearly every content word of an original one."""
+    words = lambda text: {w.lower().rstrip("s") for w in re.findall(r"[A-Za-z][A-Za-z0-9+#.]{3,}", text or "")}
+    of_the_original = words(original)
+    return bool(of_the_original) and len(of_the_original & words(rewrite)) / len(of_the_original) >= SHARE_OF_WORDS_THAT_MAKES_A_REPEAT
 
 
 # ── What the posting asks for, and where the résumé shows it ───────────────────

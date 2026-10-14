@@ -623,3 +623,27 @@ def test_an_item_that_carries_more_than_the_name_is_not_cut():
 def test_the_item_that_closes_a_list_in_mid_sentence_is_not_cut():
     sentence = "Built apps using Java, Spring Boot, and Kubernetes, supporting patient, provider, and clinical workflows."
     assert focused._without_the_list_items_naming(sentence, ["Kubernetes"]) == ""
+
+
+def test_a_section_heading_offered_as_the_title_is_refused():
+    posting = "Summary\nWe are looking for a Senior Python Backend Engineer.\nRequired: Python."
+    header = focused.build_focused_resume(_reply(target_job_title="Summary"), BASE, posting)["header"]
+    assert "target_title" not in header and header["title"] == "Backend Developer"
+
+
+def test_a_title_named_in_the_text_is_accepted():
+    posting = "Summary\nWe are looking for a Senior Python Backend Engineer.\nRequired: Python."
+    header = focused.build_focused_resume(_reply(target_job_title="Senior Python Backend Engineer"), BASE, posting)["header"]
+    assert header["target_title"] == "Senior Python Backend Engineer"
+
+
+def test_a_complete_copy_does_not_print_again_a_bullet_a_rewrite_already_says():
+    roles = [{"role_number": 1, "bullets": [_bullet("Followed TDD and wrote unit tests on every service.", 1)]}]   # the wrong source
+    copy = _complete(work_experience=roles)
+    assert "Wrote unit tests and followed TDD on every service." not in _bullets(copy, 1)
+    assert "Built REST APIs with Python and FastAPI for 40 internal teams." not in _bullets(copy, 1)[:1]
+
+
+def test_a_different_bullet_is_still_printed_in_a_complete_copy():
+    copy = _complete(work_experience=[{"role_number": 1, "bullets": [_bullet("Followed TDD and wrote unit tests on every service.", 3)]}])
+    assert "Organised the team's yearly offsite." in _bullets(copy, 1) and len(_bullets(copy, 1)) == 4

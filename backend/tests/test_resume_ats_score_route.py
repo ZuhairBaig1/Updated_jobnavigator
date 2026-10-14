@@ -156,3 +156,19 @@ def test_a_failure_on_the_claude_plan_is_never_blamed_on_openrouter_credit(api_c
                             json={"job_description": "Requirements\n- Kubernetes", "scorer": "rubric", "model": "haiku_plan"})
 
     assert reply.status_code == 503
+
+
+def test_a_used_up_plan_says_so_instead_of_try_again(api_client, test_db, monkeypatch):
+    from backend.analyzer import rubric_ats_score
+    from backend.analyzer.llm_client import NonRetryableLLMError
+    resume = _saved(test_db, _resume())
+
+    async def limit_reached(*args, **kwargs):
+        raise NonRetryableLLMError("Codex usage limit reached: try again at 4:58 PM.")
+    monkeypatch.setattr(rubric_ats_score, "ats_score", limit_reached)
+
+    reply = api_client.post(f"/api/resumes/{resume.id}/ats-score",
+                            json={"job_description": "Requirements\n- Kubernetes", "scorer": "rubric", "model": "luna_plan"})
+
+    assert reply.status_code == 429
+    assert "usage limit reached" in reply.json()["detail"]

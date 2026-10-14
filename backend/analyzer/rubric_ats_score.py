@@ -32,7 +32,7 @@ from datetime import date
 
 from backend.analyzer import keyword_match, line_match
 from backend.analyzer.job_requirements import clean_job_text
-from backend.analyzer.llm_client import call_llm
+from backend.analyzer.llm_client import NonRetryableLLMError, call_llm
 from backend.analyzer.llm_cost import calc_cost
 from backend.analyzer.llm_logger import log_llm_call
 
@@ -42,13 +42,17 @@ PROVIDER = "openrouter"
 MODEL = "google/gemma-4-31b-it"
 # The models a caller may ask for by a short name, each with the provider that serves it.
 GEMMA, HAIKU, HAIKU_ON_THE_CLAUDE_PLAN = "gemma", "haiku", "haiku_plan"
-LUNA_ON_THE_CHATGPT_PLAN = "luna_plan_high"
-# The last two run on a login of a local backend (Claude Code, Codex): no OpenRouter credit is spent or needed.
+LUNA, LUNA_ON_THE_CHATGPT_PLAN, LUNA_ON_THE_CHATGPT_PLAN_HIGH = "luna", "luna_plan", "luna_plan_high"
+# The ones on a plan run on a login of a local backend (Claude Code, Codex): no OpenRouter credit is spent or needed.
 MODELS = {GEMMA: (PROVIDER, MODEL), HAIKU: (PROVIDER, "anthropic/claude-haiku-5.5"),
+          LUNA: (PROVIDER, "openai/gpt-6-luna"),
           HAIKU_ON_THE_CLAUDE_PLAN: ("claude_code", "claude-haiku-5-5"),
-          LUNA_ON_THE_CHATGPT_PLAN: ("codex_cli", "gpt-6-luna:high")}
-# Seven reasons of a sentence each, seven picks, the duties sorted into two lists, and three missing requirements.
-MOST_REPLY_TOKENS = 1000
+          LUNA_ON_THE_CHATGPT_PLAN: ("codex_cli", "gpt-6-luna"),
+          LUNA_ON_THE_CHATGPT_PLAN_HIGH: ("codex_cli", "gpt-6-luna:high")}
+# Seven reasons of a sentence each, seven picks, the duties sorted into two lists, and three missing requirements
+# take about 1,000 tokens; a model that thinks first (GPT-6 Luna on OpenRouter: about 1,700 thinking tokens a reply)
+# needs room for that too, or its reply is cut off. Billing follows what is written, not this ceiling.
+MOST_REPLY_TOKENS = 8000
 MOST_WORDS_IN_A_REASON = 20
 RESUME_MAX_CHARS = 24_000
 POSTING_MAX_CHARS = 8_000
@@ -571,6 +575,8 @@ async def _one_reply(prompt: str, provider: str, model: str) -> dict | None:
                                response_schema=_schema_of_the_reply(), schema_name="ats_rubric", temperature=0)
     except Exception as error:
         logger.warning(f"A rubric call failed ({type(error).__name__}: {error})")
+        if isinstance(error, NonRetryableLLMError):
+            raise   # a plan's usage limit or a missing login: the caller says so rather than "try again"
         return None
     answers = _answers_in(reply.get("text") or "")
     if answers is None:

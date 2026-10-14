@@ -133,11 +133,8 @@ def start_tailoring(base_resume_id: str, job_description: str, way: str = "") ->
 
 # The ways of scoring the toggle offers: what the backend is asked for, and what the user is told.
 SCORING_METHODS = {
-    "Rubric — Gemma 4 31B": {"scorer": "rubric", "model": "gemma"},
-    "Rubric — Claude Haiku 5.5": {"scorer": "rubric", "model": "haiku"},
-    "Rubric — Haiku 5.5 on the Claude plan (local backend)": {"scorer": "rubric", "model": "haiku_plan"},
-    "Rubric — GPT-6 Luna, high effort, on the ChatGPT plan (local backend)": {"scorer": "rubric", "model": "luna_plan_high"},
-    "Line by line — Jev": {"scorer": "jev"},
+    "Rubric — GPT-6 Luna on the ChatGPT plan (Codex, local backend)": {"scorer": "rubric", "model": "luna_plan"},
+    "Rubric — GPT-6 Luna on OpenRouter": {"scorer": "rubric", "model": "luna"},
 }
 
 
@@ -241,25 +238,20 @@ def get_pdf(resume_id: str, template: str = "word") -> tuple:
 # The model line-ups the toggle switches between. Each names both jobs explicitly
 # rather than leaving one to fall through to the primary: an empty override follows
 # `llm_provider`, which is not necessarily any of these.
+# Only the two GPT-6 Luna engines are offered here, Codex first; the backend still serves every other
+# line-up (OpenRouter flash + gemma, Haiku, Claude Code) for the React frontend and for anyone setting it directly.
 ENGINES = {
-    "OpenRouter": {
-        "label": "OpenRouter — flash + gemma",
-        "help": "deepseek-v4.1-flash structures, gemma-4-31b tailors. Fast; tailoring quality varies run to run.",
+    "Codex": {
+        "label": "Codex — gpt-6-luna, normal effort",
+        "help": "Both jobs on the Codex CLI with your ChatGPT plan, on GPT-6 Luna at its normal effort: about 30-40s to import "
+                "a long résumé, 25-30s for a Focused copy and 30-50s for a Complete one. High effort was tested and gave the "
+                "same results in about twice the time. Local only — a hosted backend has no codex binary to run and no way "
+                "to log one in.",
         "settings": {
-            "parse_llm_provider": "openrouter",
-            "parse_llm_model": "deepseek/deepseek-v4.1-flash",
-            "cv_tailor_llm_provider": "openrouter",
-            "cv_tailor_llm_model": "google/gemma-4-31b-it",
-        },
-    },
-    "Haiku": {
-        "label": "OpenRouter — Claude Haiku 5.5",
-        "help": "Claude Haiku 5.5 through OpenRouter for both jobs. Works on a hosted backend, since it needs only the OpenRouter key.",
-        "settings": {
-            "parse_llm_provider": "openrouter",
-            "parse_llm_model": "anthropic/claude-haiku-5.5",
-            "cv_tailor_llm_provider": "openrouter",
-            "cv_tailor_llm_model": "anthropic/claude-haiku-5.5",
+            "parse_llm_provider": "codex_cli",
+            "parse_llm_model": "gpt-6-luna",
+            "cv_tailor_llm_provider": "codex_cli",
+            "cv_tailor_llm_model": "gpt-6-luna",
         },
     },
     "Luna": {
@@ -270,46 +262,6 @@ ENGINES = {
             "parse_llm_model": "openai/gpt-6-luna",
             "cv_tailor_llm_provider": "openrouter",
             "cv_tailor_llm_model": "openai/gpt-6-luna",
-        },
-    },
-    "Codex": {
-        "label": "Codex — gpt-6-luna",
-        "help": "Both jobs on the Codex CLI with your ChatGPT plan, on GPT-6 Luna: about 40s to import a long résumé and 30s to tailor it. Local only — a hosted backend has no codex binary to run and no way to log one in.",
-        "settings": {
-            "parse_llm_provider": "codex_cli",
-            "parse_llm_model": "gpt-6-luna",
-            "cv_tailor_llm_provider": "codex_cli",
-            "cv_tailor_llm_model": "gpt-6-luna",
-        },
-    },
-    "Codex High": {
-        "label": "Codex — gpt-6-luna, high effort",
-        "help": "Both jobs on the Codex CLI with your ChatGPT plan, on GPT-6 Luna told to think harder: about 40s to import a long résumé and 40s to tailor it. It rewords far more bullets than the normal setting. Local only — a hosted backend has no codex binary to run and no way to log one in.",
-        "settings": {
-            "parse_llm_provider": "codex_cli",
-            "parse_llm_model": "gpt-6-luna:high",
-            "cv_tailor_llm_provider": "codex_cli",
-            "cv_tailor_llm_model": "gpt-6-luna:high",
-        },
-    },
-    "Claude Code": {
-        "label": "Claude Code — sonnet-5.5",
-        "help": "Both jobs on the Claude Code CLI with your Claude plan, agent features switched off. About 30s per job, and local only — a hosted backend has no claude binary to run and no way to log one in.",
-        "settings": {
-            "parse_llm_provider": "claude_code",
-            "parse_llm_model": "claude-sonnet-5-5",
-            "cv_tailor_llm_provider": "claude_code",
-            "cv_tailor_llm_model": "claude-sonnet-5-5",
-        },
-    },
-    "Claude Code Haiku": {
-        "label": "Claude Code — haiku-5.5",
-        "help": "Both jobs on the Claude Code CLI with your Claude plan, on Haiku 5.5: about 50s to import a long résumé and 80s to tailor it. Far lighter on the plan's usage limits than Sonnet, and local only — a hosted backend has no claude binary to run and no way to log one in.",
-        "settings": {
-            "parse_llm_provider": "claude_code",
-            "parse_llm_model": "claude-haiku-5-5",
-            "cv_tailor_llm_provider": "claude_code",
-            "cv_tailor_llm_model": "claude-haiku-5-5",
         },
     },
 }

@@ -448,7 +448,17 @@ def target_job_title(reply: dict, jd_text: str, title_of_the_job: str = "") -> s
     key = _squash(from_reply)
     if len(key) < 3 or len(from_reply) > LONGEST_TARGET_TITLE_CHARS or key not in _squash(jd_text):
         return ""
+    if key in _HEADINGS_THAT_ARE_NOT_A_JOB:
+        return ""
     return from_reply
+
+
+# The headings a pasted posting starts with. A reply that offers one of these as the job's title has read
+# the page's layout, not the job: a copy printed "Summary" under the candidate's name on 2026-10-14.
+_HEADINGS_THAT_ARE_NOT_A_JOB = {_squash(heading) for heading in (
+    "Summary", "Job Summary", "Job Description", "Description", "About the job", "About the Role", "About the Company",
+    "About Us", "Overview", "Role Overview", "Position Overview", "Responsibilities", "Key Responsibilities",
+    "Requirements", "Qualifications", "Job Details", "Details", "Role", "Position", "Job", "Opening")}
 
 
 def _tailored_header(base_header: dict, reply_header: dict, base_text: str, target_title: str = "") -> dict:

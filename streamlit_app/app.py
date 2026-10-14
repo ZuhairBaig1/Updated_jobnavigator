@@ -357,6 +357,10 @@ def _show_a_limit(name: str, window) -> None:
     st.progress(used, text=f"{name}: {100 * used:.0f}% used · resets {_when(window.get('resets_at'))}")
 
 
+# Only matters for the Claude Code engines, which this app no longer offers.
+SHOW_THE_CLAUDE_PLAN_USAGE = False
+
+
 def _claude_plan_usage_panel():
     """The Claude plan's limits and what the latest Claude Code calls used, read when asked for."""
     with st.expander("Claude plan usage"):
@@ -393,7 +397,8 @@ def _claude_plan_usage_panel():
 
 # ── sidebar: where the backend is ───────────────────────────────────────────────
 with st.sidebar:
-    _claude_plan_usage_panel()
+    if SHOW_THE_CLAUDE_PLAN_USAGE:
+        _claude_plan_usage_panel()
     st.subheader("Engine")
     try:
         _settings = api.get_settings()
@@ -459,15 +464,17 @@ def _add_resume_box():
     """Upload a PDF and let the backend structure it into a base résumé.
 
     The same endpoint the React frontend imports through, so a résumé added here is a
-    normal base résumé everywhere. The upload key is bumped after a successful import so
-    the picker clears itself instead of re-submitting the same file on the next rerun.
+    normal base résumé everywhere. The import starts as soon as a file is chosen. The upload
+    key is bumped after a successful import so the picker clears itself, and a file that
+    failed is not sent again on every rerun: only choosing another file tries again.
     """
     st.session_state.setdefault("upload_round", 0)
+    st.session_state.setdefault("import_tried", None)
     with st.expander("Add a résumé", expanded=not bases):
         pdf = st.file_uploader("Résumé PDF", type=["pdf"], key=f"pdf-{st.session_state.upload_round}",
-                               help="Up to 10 MB. The backend reads it and structures it into a base résumé.")
-        if pdf is not None and st.button("Import", type="primary", use_container_width=True,
-                                         key=f"import-{st.session_state.upload_round}"):
+                               help="Up to 10 MB. Importing starts as soon as you choose the file.")
+        if pdf is not None and st.session_state.import_tried != pdf.file_id:
+            st.session_state.import_tried = pdf.file_id
             with st.spinner(f"Reading {pdf.name}… this can take a minute."):
                 started = time.monotonic()
                 try:

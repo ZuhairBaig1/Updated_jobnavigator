@@ -1,0 +1,27 @@
+Job description
+ Business Unit:
+ Cubic Transportation Systems
+
+We have a top-tier portfolio of businesses, including Cubic Transportation Systems (CTS) and Cubic Defense (CD). Explore more on Cubic. com.
+ Job Details:
+ Senior Software Engineer - Java
+
+* Bachelor s degree in Computer Science or related field.
+* 5+ years of experience in Java backend development.
+* Strong experience with Java (11+), Spring Boot, and Microservices.
+* Write clean, efficient, and testable code following industry best practices.
+* Experience with cloud platforms - Amazon Web Services.
+* Work with SQL and NoSQL databases (e. g. , PostgreSQL, Oracle, Redis, DynamoDB).
+* Hands-on experience with Kafka, Docker, Kubernetes, and CI/CD tools.
+* Solid understanding of data structures, multithreading, and distributed systems.
+* Collaborate with cross-functional teams in an Agile/Scrum environment.
+* Conduct code reviews and mentor junior engineers.
+* Stay updated with modern technologies and contribute to continuous improvement.
+
+* Experience in Payment domain is a must.
+* Working knowledge of cryptography
+   * Symmetric keys
+   * Asymmetric keys
+   * Certificate handling
+   * TR-31 key blocks
+   * mTLS

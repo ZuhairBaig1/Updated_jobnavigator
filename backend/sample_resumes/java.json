@@ -1,0 +1,183 @@
+{
+  "header": {
+    "name": "Zuhair Baig",
+    "title": "",
+    "contact_items": [
+      {
+        "text": "zuhair@gmail.com",
+        "url": "mailto:zuhair@gmail.com"
+      },
+      {
+        "text": "7845123698",
+        "url": ""
+      },
+      {
+        "text": "H 1B",
+        "url": ""
+      }
+    ],
+    "contact": {
+      "location": "",
+      "email": "zuhair@gmail.com",
+      "phone": "7845123698",
+      "github": "",
+      "linkedin": ""
+    }
+  },
+  "summary": "9+ years of experience designing and developing scalable enterprise applications across healthcare, insurance, financial services, and IT services. Expertise in Java 8/11/17/21, Spring Boot, Spring Cloud, microservices, REST APIs, Kafka, Hibernate, JPA, PostgreSQL, Oracle, MySQL, React, Angular, and TypeScript, with hands-on experience in AWS, Docker, Kubernetes, Terraform, CI/CD, Spring Security, OAuth 2.0/2.1, JWT, and Okta. Experienced in modernizing legacy applications, optimizing performance, building secure cloud-native solutions, and delivering software using Agile/Scrum practices.",
+  "skills": {
+    "Programming Languages": "Java 8/11/17/21, JavaScript, TypeScript, SQL, Python, Bash",
+    "Java and Backend": "Spring Framework, Spring Boot, Spring MVC, Spring Cloud, Spring Security, Spring Data JPA, Hibernate, JPA, Microservices, REST APIs, GraphQL, SOAP, JDBC, Maven, Gradle",
+    "Frontend": "React 18, Angular 8–16+, TypeScript, JavaScript, HTML5, CSS3, Redux, RxJS, Material UI, Angular Material, Tailwind CSS",
+    "Microservices and Messaging": "Microservices Architecture, Event-Driven Architecture, Apache Kafka, RabbitMQ, AWS SQS, API Gateway, Service Discovery",
+    "Cloud": "AWS, Amazon ECS, AWS Lambda, Amazon EC2, Amazon S3, Amazon RDS, AWS CloudWatch, AWS IAM, Microsoft Azure, Azure App Services, Azure Functions, Google Cloud Platform (GCP), Cloud Run, Google Kubernetes Engine (GKE), Firestore",
+    "Containers and DevOps": "Docker, Kubernetes, Helm, Terraform, Jenkins, GitHub Actions, GitLab CI/CD, AWS CDK, CI/CD, Infrastructure as Code (IaC)",
+    "Databases": "PostgreSQL, Oracle, MySQL, SQL Server, MongoDB, DynamoDB, Redis, Elasticsearch",
+    "Security": "OAuth 2.0/2.1, JWT, Okta, Azure AD, RBAC, Secure API Design",
+    "Testing and Quality": "JUnit 5, Mockito, TestNG, Cucumber, REST Assured, Selenium, Cypress, SonarQube",
+    "Monitoring and Logging": "ELK Stack, Prometheus, Grafana, AWS CloudWatch",
+    "Tools and Methodologies": "Git, GitHub, GitLab, Bitbucket, IntelliJ IDEA, Postman, Jira, Confluence, Agile, Scrum, DevOps, Code Reviews, SOLID, Design Patterns"
+  },
+  "experience": [
+    {
+      "company": "AdaptHealth",
+      "title": "Senior Full Stack Java Developer",
+      "location": "Conshohocken, PA",
+      "date": "Jul 2024 – Sep 2026",
+      "start": "2024-07",
+      "end": "2026-09",
+      "current": false,
+      "description": "",
+      "bullets": [
+        "Developed scalable healthcare applications using Java 17/21, Spring Boot 3.x, Spring Cloud, and microservices to support patient, provider, clinical, and healthcare operational workflows.",
+        "Built and enhanced RESTful and GraphQL APIs for patient, provider, appointment, eligibility, clinical, claims, and healthcare administration services.",
+        "Implemented healthcare integrations using HL7 v2.x, FHIR R4, JSON, XML, and REST-based interfaces to exchange patient and clinical information across healthcare systems.",
+        "Developed event-driven healthcare services using Apache Kafka, AWS SQS, and asynchronous messaging to process clinical, patient, notification, and transaction events.",
+        "Designed secure backend services using Spring Security 6, OAuth 2.1, JWT, Okta, and RBAC to enforce authentication and authorization across healthcare applications and APIs.",
+        "Developed responsive healthcare user interfaces using React 18, Angular 16+, TypeScript, Redux, Material UI, and Tailwind CSS for clinical, administrative, and operational users.",
+        "Implemented reusable React and Angular components, form validations, state management, API integrations, and responsive workflows for patient and healthcare-provider applications.",
+        "Developed data-access services using Spring Data JPA, Hibernate, PostgreSQL, DynamoDB, Redis, and Elasticsearch, optimizing queries and persistence strategies for healthcare workloads.",
+        "Modernized legacy healthcare applications by decomposing monolithic functionality into Docker-based Spring Boot microservices and deploying workloads through Kubernetes and AWS ECS.",
+        "Implemented cloud-native solutions on AWS using ECS, Lambda, RDS, S3, IAM, CloudWatch, and related services to support secure and scalable healthcare applications.",
+        "Automated infrastructure provisioning and environment configuration using Terraform and AWS CDK across development, QA, staging, and production environments.",
+        "Built and maintained CI/CD pipelines using GitHub Actions, Jenkins, and GitLab CI/CD for automated builds, testing, security validation, containerization, and application deployments.",
+        "Implemented healthcare application observability using Prometheus, Grafana, Elasticsearch, Kibana, and CloudWatch to monitor application health, service performance, logs, and operational metrics.",
+        "Improved application performance through Redis caching, PostgreSQL query optimization, connection-pool tuning, asynchronous processing, Elasticsearch indexing, and efficient microservice communication.",
+        "Developed asynchronous processing and scheduled services for healthcare notifications, patient workflows, document processing, data synchronization, and downstream system integrations.",
+        "Implemented healthcare data protection practices aligned with HIPAA and PHI requirements, including secure API communication, access controls, encryption, audit logging, and controlled handling of sensitive patient information.",
+        "Integrated Python-based services and machine learning capabilities using TensorFlow and scikit-learn to support healthcare analytics and predictive-use-case integrations while keeping ML workloads separated from core Java services.",
+        "Implemented automated unit, integration, API, and component testing using JUnit 5, Mockito, Spring Boot Test, REST Assured, and frontend testing frameworks.",
+        "Participated in technical design discussions, code reviews, production troubleshooting, sprint planning, backlog refinement, and Agile/Scrum ceremonies, while mentoring developers and promoting maintainable engineering practices.",
+        "Collaborated with healthcare analysts, product owners, QA engineers, DevOps teams, and business stakeholders to translate clinical and operational requirements into scalable full-stack solutions."
+      ]
+    },
+    {
+      "company": "CNA Insurance",
+      "title": "Full Stack Java Developer",
+      "location": "Chicago, IL",
+      "date": "Mar 2022 – Jun 2024",
+      "start": "2022-03",
+      "end": "2024-06",
+      "current": false,
+      "description": "",
+      "bullets": [
+        "Developed and maintained enterprise insurance applications using Java 8/11/17, Spring Boot, Spring MVC, Spring Data JPA, Hibernate, and RESTful services for policy and customer-facing business workflows.",
+        "Built scalable microservices-based applications using Spring Boot and Spring Cloud for policy administration, quote processing, billing, customer servicing, claims-related workflows, and insurance operations.",
+        "Developed RESTful APIs and service integrations using Spring MVC, JSON, XML, and OpenAPI/Swagger to enable communication between internal applications, insurance systems, and external service providers.",
+        "Implemented business logic for policy lifecycle management, quote and underwriting workflows, premium processing, renewals, endorsements, cancellations, customer information, and claims-support processes.",
+        "Developed reusable backend components using Java collections, streams, lambda expressions, exception handling, generics, multithreading, and object-oriented design principles.",
+        "Implemented persistence layers using Spring Data JPA, Hibernate, PostgreSQL, and MySQL, developing entity mappings, repositories, transactional services, and database access.",
+        "Optimized complex SQL queries, indexes, joins, stored procedures, and database interactions for high-volume insurance transactions.",
+        "Implemented asynchronous and event-driven processing using Apache Kafka to produce and consume policy, customer, transaction, and notification events across distributed services.",
+        "Developed responsive web applications using React, Angular, TypeScript, JavaScript, HTML5, CSS3, and reusable component-based architectures for insurance agents, customers, and internal business users.",
+        "Implemented frontend state management, form validation, reusable UI components, API integrations, error handling, and responsive workflows for policy and customer-service applications.",
+        "Secured backend services using Spring Security, JWT, OAuth 2.0 concepts, role-based access control, and API-level authorization to protect customer and insurance transaction data.",
+        "Implemented caching and performance improvements using Redis, database optimization, efficient API communication, pagination, connection pooling, and asynchronous processing.",
+        "Containerized Spring Boot applications using Docker and supported deployment of application services across AWS environments using EC2, ECS, ECR, RDS, S3, Lambda, and CloudWatch.",
+        "Configured AWS-based application components, application logs, monitoring, environment variables, IAM-based access, storage, and database connectivity for development, QA, staging, and production environments.",
+        "Automated application builds, testing, packaging, and deployments using Maven, Jenkins, Git, and CI/CD pipelines across multiple environments.",
+        "Created automated tests using JUnit 5, Mockito, Spring Boot Test, and REST API testing for service logic, controllers, repositories, integrations, and regression scenarios.",
+        "Used Git-based branching, pull requests, code reviews, Maven dependency management, and build automation to maintain source-code quality and consistent development practices.",
+        "Implemented API documentation and developer integration support using OpenAPI/Swagger for internal consumers and external insurance-system integrations.",
+        "Participated in application modernization initiatives by refactoring legacy Java/Spring components into Spring Boot and microservices.",
+        "Troubleshot production and lower-environment issues across Java applications, APIs, microservices, Kafka, databases, Docker containers, and AWS infrastructure, performing root-cause analysis and implementing corrective fixes.",
+        "Collaborated with product owners, insurance SMEs, QA engineers, DevOps teams, architects, and business stakeholders to translate insurance requirements into technical solutions within Agile/Scrum delivery cycles."
+      ]
+    },
+    {
+      "company": "Sallie Mae",
+      "title": "Senior Java Developer",
+      "location": "Jacksonville, FL",
+      "date": "Jan 2020 – Feb 2022",
+      "start": "2020-01",
+      "end": "2022-02",
+      "current": false,
+      "description": "",
+      "bullets": [
+        "Developed and enhanced enterprise financial applications using Java 8/11, Spring Framework 5.x, Spring Boot 2.x, Spring MVC, Spring Data JPA, Hibernate, and JPA.",
+        "Designed and implemented scalable backend services using layered architecture, MVC patterns, dependency injection, reusable service components, and object-oriented programming principles.",
+        "Developed RESTful APIs for financial applications supporting customer accounts, transactions, payments, financial servicing, reporting, and business-process workflows.",
+        "Implemented business logic using Java Collections, Streams, Lambda expressions, Generics, Exception Handling, Multithreading, and Java 8 functional programming features.",
+        "Built reusable controllers, service layers, repositories, DTOs, entity models, validators, exception handlers, and common utilities across enterprise applications.",
+        "Developed and consumed REST and SOAP web services to integrate financial applications with internal platforms, third-party providers, payment services, and downstream enterprise systems.",
+        "Implemented persistence solutions using Spring Data JPA, Hibernate, Oracle, and MySQL, including entity relationships, transaction management, JPQL, native SQL, and database optimization.",
+        "Optimized complex SQL queries, indexes, stored procedures, joins, and database access patterns for transaction-intensive financial applications.",
+        "Developed responsive frontend modules using Angular, TypeScript, JavaScript, HTML5, CSS3, AJAX, and reusable UI components for customer and internal financial-service applications.",
+        "Implemented frontend-to-backend integrations using REST APIs, handling form validation, error handling, asynchronous requests, data binding, and reusable Angular services/components.",
+        "Applied enterprise security practices using Spring Security, authentication, authorization, role-based access control, secure session management, and protected REST endpoints.",
+        "Implemented API documentation and integration specifications using Swagger/OpenAPI for application developers, QA teams, and downstream consumers.",
+        "Supported deployment of Java applications on AWS EC2, with application data and artifacts utilizing Amazon RDS and S3, and monitored application behavior through AWS CloudWatch.",
+        "Managed application builds and dependency management using Maven, implementing standardized build configurations, packaging, and environment-specific deployment processes.",
+        "Developed and maintained Jenkins CI pipelines for automated compilation, unit testing, packaging, static analysis, and deployment across development, QA, and production environments.",
+        "Created automated unit and integration tests using JUnit 5, Mockito, and Spring Boot Test to validate business logic, REST controllers, service components, and database interactions.",
+        "Used Git, pull requests, branching strategies, peer code reviews, and SonarQube to maintain source-code quality and enforce development standards.",
+        "Troubleshot application issues across development, QA, and production environments through debugging, root-cause analysis, log analysis, performance investigation, and defect resolution.",
+        "Participated in Agile/Scrum ceremonies, including sprint planning, backlog refinement, daily stand-ups, sprint reviews, retrospectives, estimation, and technical discussions with business and QA teams.",
+        "Collaborated with business analysts, product owners, QA engineers, DevOps engineers, and financial-domain stakeholders to translate requirements into scalable technical solutions.",
+        "Supported application modernization by refactoring legacy Java components, improving API integrations, introducing Spring Boot-based services, and gradually adopting cloud deployment practices."
+      ]
+    },
+    {
+      "company": "Nelnet",
+      "title": "Java Developer",
+      "location": "Lincoln, NE",
+      "date": "May 2017 – Dec 2019",
+      "start": "2017-05",
+      "end": "2019-12",
+      "current": false,
+      "description": "",
+      "bullets": [
+        "Developed and maintained enterprise applications using Java 8, Spring Core, Spring MVC, Hibernate, JDBC, JSP, and Servlets, following object-oriented programming and established SDLC practices.",
+        "Developed reusable Java components, business services, controllers, utility classes, validation modules, and data-access components for enterprise business applications.",
+        "Implemented backend business logic using Java Collections, Generics, Exception Handling, Java 8 Lambda expressions, Streams, and functional interfaces.",
+        "Designed and developed RESTful and SOAP-based web services to integrate enterprise applications with internal systems and external third-party platforms.",
+        "Created XML- and JSON-based request/response models and implemented service-layer validations, exception handling, logging, and integration error handling.",
+        "Developed web-based user interfaces using JSP, Servlets, JavaScript, jQuery, AJAX, HTML5, and CSS3, creating reusable pages and client-side validation components.",
+        "Implemented database access using Hibernate ORM and JDBC, including entity mappings, HQL queries, transaction management, prepared statements, and connection management.",
+        "Developed and optimized Oracle and MySQL database solutions, creating SQL queries, joins, indexes, stored procedures, functions, views, and database objects.",
+        "Improved application performance through SQL query optimization, Hibernate tuning, efficient database access, connection management, and reusable application components.",
+        "Implemented application logging and exception-handling mechanisms using Log4j to support troubleshooting, production monitoring, and defect investigation.",
+        "Managed application dependencies, compilation, packaging, and build processes using Apache Maven, maintaining project configuration and environment-specific build profiles.",
+        "Developed unit tests using JUnit and Mockito to validate business logic and backend components and support regression testing during application releases.",
+        "Deployed and supported Java web applications on Apache Tomcat and JBoss/WildFly application servers across development, QA, and production environments.",
+        "Participated in application debugging, defect resolution, log analysis, root-cause investigation, and production-support activities across multiple environments.",
+        "Collaborated with QA engineers to analyze defects, reproduce issues, validate fixes, and support functional, integration, and regression testing activities.",
+        "Participated in requirements analysis, technical discussions, development, code reviews, unit testing, integration testing, deployment, and production support throughout the software development lifecycle.",
+        "Worked closely with business analysts, QA teams, senior developers, and business users to clarify requirements and deliver application enhancements within Agile development cycles.",
+        "Participated in Agile/Scrum ceremonies, including daily stand-ups, sprint planning, backlog discussions, sprint reviews, retrospectives, and release coordination.",
+        "Prepared technical documentation covering application functionality, API integrations, database changes, deployment procedures, and production-support activities."
+      ]
+    }
+  ],
+  "projects": [],
+  "education": [
+    {
+      "school": "",
+      "degree": "Bachelors in Computer Science",
+      "years": "",
+      "grade": ""
+    }
+  ],
+  "certifications": [],
+  "_layout": "ats"
+}

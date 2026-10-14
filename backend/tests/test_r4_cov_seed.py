@@ -413,7 +413,7 @@ def test_a_user_renamed_search_of_a_seeded_mode_blocks_the_seed(test_db):
 
 
 def test_mock_resume_is_seeded_and_wired_up(test_db):
-    """The sample base resume becomes default_resume_id and every company's selection."""
+    """The three sample base résumés are seeded; the first becomes default_resume_id and every company's selection."""
     test_db.add(Setting(key="default_resume_id", value=""))
     test_db.add(Company(name="Acme"))
     test_db.add(Company(name="Beta"))
@@ -421,13 +421,17 @@ def test_mock_resume_is_seeded_and_wired_up(test_db):
 
     seed.seed_mock_resume(test_db)
 
-    resume = test_db.query(Resume).one()
-    assert resume.name == "Sample PM" and resume.is_base is True
-    assert resume.template == "garamond_alt" and resume.page_format == "letter"
-    assert resume.json_data["header"]["name"] == "Alex Johnson"
-    assert test_db.query(Setting).filter(Setting.key == "default_resume_id").one().value == str(resume.id)
+    resumes = {r.name: r for r in test_db.query(Resume).all()}
+    assert sorted(resumes) == sorted(name for name, _ in seed.SAMPLE_RESUMES)
+    for resume in resumes.values():
+        assert resume.is_base is True
+        assert resume.template == "garamond_alt" and resume.page_format == "letter"
+        assert resume.json_data["header"]["name"] and resume.json_data["experience"]
+    assert len(resumes["Python resume-2"].json_data["experience"]) == 4
+    default = resumes[seed.SAMPLE_RESUMES[0][0]]
+    assert test_db.query(Setting).filter(Setting.key == "default_resume_id").one().value == str(default.id)
     for c in test_db.query(Company).all():
-        assert c.selected_resume_ids == [str(resume.id)]
+        assert c.selected_resume_ids == [str(default.id)]
 
 
 def test_mock_resume_is_skipped_when_a_base_resume_exists(test_db):
@@ -441,7 +445,7 @@ def test_mock_resume_is_skipped_when_a_base_resume_exists(test_db):
 def test_mock_resume_seeds_even_without_a_default_resume_setting(test_db):
     """No `default_resume_id` row yet → the resume is still created, nothing crashes."""
     seed.seed_mock_resume(test_db)
-    assert test_db.query(Resume).filter(Resume.name == "Sample PM").count() == 1
+    assert test_db.query(Resume).filter(Resume.is_base == True).count() == len(seed.SAMPLE_RESUMES)
     assert test_db.query(Setting).filter(Setting.key == "default_resume_id").first() is None
 
 
@@ -450,7 +454,7 @@ def test_a_tailored_copy_does_not_count_as_a_base_resume(test_db):
     test_db.add(Resume(name="Tailored", is_base=False, json_data={}))
     test_db.commit()
     seed.seed_mock_resume(test_db)
-    assert test_db.query(Resume).filter(Resume.name == "Sample PM").count() == 1
+    assert test_db.query(Resume).filter(Resume.is_base == True).count() == len(seed.SAMPLE_RESUMES)
 
 
 # ══ seed_persona ════════════════════════════════════════════════════════════
@@ -733,7 +737,7 @@ def test_run_seeds_brings_an_empty_database_up(test_db):
     assert test_db.query(Company).count() == len(seed.SEED_COMPANIES)
     assert {s.search_mode for s in test_db.query(Search).all()} == \
         {s["search_mode"] for s in seed.SEED_SEARCHES}
-    assert test_db.query(Resume).filter(Resume.name == "Sample PM").count() == 1
+    assert test_db.query(Resume).filter(Resume.is_base == True).count() == len(seed.SAMPLE_RESUMES)
     assert test_db.query(Persona).filter(Persona.id == 1).count() == 1
     # migrate_llm_settings ran: the seen-marker exists and the list is real JSON.
     assert json.loads(settings["llm_seeded_models"])
@@ -745,13 +749,13 @@ def test_run_seeds_is_idempotent(test_db):
     seed.run_seeds()
     secret = test_db.query(Setting).filter(
         Setting.key == "telegram_webhook_secret").one().value
-    resume_id = test_db.query(Resume).filter(Resume.name == "Sample PM").one().id
+    resume_ids = {r.id for r in test_db.query(Resume).all()}
 
     seed.run_seeds()
 
     assert test_db.query(Setting).filter(
         Setting.key == "telegram_webhook_secret").one().value == secret
-    assert test_db.query(Resume).filter(Resume.name == "Sample PM").one().id == resume_id
+    assert {r.id for r in test_db.query(Resume).all()} == resume_ids
     assert test_db.query(Company).count() == len(seed.SEED_COMPANIES)
     assert test_db.query(Search).count() == len(seed.SEED_SEARCHES)
     assert test_db.query(Persona).count() == 1

@@ -1,0 +1,35 @@
+Job description
+About the Role:
+We are seeking an experienced technical lead with 8+ years in software engineering to architect and build complex, scalable applications. In this role, you will lead technical development, drive best practices, and tackle complex problem-solving scenarios. You will leverage Python, PostgreSQL, cloud-native technologies, and GenAI tooling to accelerate delivery and foster a culture of excellence.
+Grade Level (for internal use): 11
+The Role: Lead I, Software Development/Engineering
+The Team:
+As a member of the EDO, Collection Platforms AI Foundational Data Linking team, you will be at the heart of our data-driven strategy. You will build and maintain enterprise-scale data processing pipelines that power our critical data sourcing, information retrieval, and machine learning solutions. In our cloud-native ecosystem, you will have the opportunity to design resilient, production-ready systems and grow your skills in a highly collaborative, global environment that encourages innovation and ownership.
+Responsibilities and Impact:
+
+* Software Development Architecture: Architect, design, and develop scalable cloud-based data applications and robust pipelines within a cross-functional Agile team.
+* AI Innovation: Spearhead traditional AI and GenAI initiatives. Leverage tools like GitHub Copilot to improve development speed, code quality, and time-to-market.
+* Complex Problem Solving: Manage and optimize existing solutions. Solve highly complex architectural problems by weighing costs, benefits, and long-term scalability.
+* Operations Reliability: Troubleshoot and debug complex code and cloud infrastructure issues to guarantee system reliability and high availability.
+* Technical Leadership Collaboration: Provide hands-on guidance, conduct code reviews, enforce coding standards, and closely collaborate with both technical and non-technical stakeholders through excellent documentation and clear communication.
+
+What Were Looking For:
+Education Experience:
+Bachelors degree in computer science, Engineering, or a related field (or equivalent work experience).
+8+ years of hands-on experience in Software Engineering, Data Engineering, or Data Science roles.
+Core Technical Skills:
+
+* Programming Databases: Expert-level proficiency in Python, SQL, and PostgreSQL.
+* Cloud-Native Infrastructure: Strong hands-on experience with Cloud platforms (AWS preferred, Azure, or GCP). Proven experience with Infrastructure as Code (Terraform) and BigQuery.
+* Event-Driven Architecture: Deep experience implementing and scaling messaging systems like Message Broker Systems or similar enterprise tools.
+* Observability: Familiarity with monitoring and logging tools.
+
+Advanced / Good-to-Have Skills:
+
+* Big Data Technologies: Exposure to Big Data processing ecosystems (Big Data Processing Engines, Databricks, AWS EMR, Apache NiFi, and ETL pipelines).
+
+Soft Skills Attributes:
+
+* Advanced complex problem-solving abilities and a strong attention to detail.
+* Deep passion for continuous learning and adopting emerging technologies.
+* Strong interpersonal and communication abilities, with a proven track record of driving alignment across diverse, global, and matrixed teams

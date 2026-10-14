@@ -1,0 +1,33 @@
+Job description
+
+Desired Competencies (Technical/Behavioral Competency)
+
+Must-Have
+
+Should be able to work as GCP Devops Engineer with hands on experience in Cloud Build, GitHub/GitLab, Jenkins. GKE (Google Kubernetes Engine), Terraform
+GCP Cloud computing.
+
+Good-to-Have
+
+Experience guiding the team on technical aspects
+
+Role descriptions / Expectations from the Role
+
+Developing, testing and deploying CICD Devops new requirements and enhancements
+
+Work on Devops integration related aspects on Cloud Build, GitHub/GitLab, Jenkins. GKE (Google Kubernetes Engine), TerraformGCP Cloud computing
+
+Quickly adapt to new tool integrations and develop. Need to completely adhere to Agile practices.
+
+Details of the Role (For Candidate Briefing)
+
+Reporting To Which Role- Candidate will report to Devops team lead
+
+Size of the Team, if any Reporting to this Role- No reporting to this role
+
+On-site Opportunity-No
+
+Unique Selling Proposition (USP) of The Role- Exposure to all latest Devops, Cloud integrations
+
+Technology Brief
+Should be able to work as GCP DevOps Engineer onCloud Build, GitHub/GitLab, Jenkins. GKE (Google Kubernetes Engine), Terraform and GCP Cloud computing

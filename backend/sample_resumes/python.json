@@ -1,0 +1,166 @@
+{
+  "header": {
+    "name": "Zuhair",
+    "title": "",
+    "contact_items": [
+      {
+        "text": "Zuhair@gmail.com",
+        "url": "mailto:Zuhair@gmail.com"
+      },
+      {
+        "text": "7845123698",
+        "url": ""
+      },
+      {
+        "text": "H 1B",
+        "url": ""
+      }
+    ],
+    "contact": {
+      "location": "",
+      "email": "Zuhair@gmail.com",
+      "phone": "7845123698",
+      "github": "",
+      "linkedin": ""
+    }
+  },
+  "summary": "9+ years of experience building scalable cloud-native enterprise applications using Python, Django, Flask, FastAPI, REST APIs, GraphQL, and microservices. Strong expertise in backend development, asynchronous programming, API integrations, distributed systems, database optimization, and event-driven applications. Hands-on experience with AWS, Docker, Kubernetes, CI/CD, PostgreSQL, MySQL, Oracle, MongoDB, Cassandra, Redis, pandas, NumPy, SciPy, and scikit-learn. Experienced in cloud deployments, performance optimization, API security, automation, production support, Agile development, code reviews, and mentoring teams.",
+  "skills": {
+    "Programming Languages": "Python 3.x, Java, SQL, Bash/Shell Scripting, C#",
+    "Python Frameworks and Libraries": "Django, Django REST Framework, Flask, FastAPI, SQLAlchemy, pandas, NumPy, SciPy, scikit-learn, Beautiful Soup, Requests",
+    "Backend Development": "RESTful API Development, GraphQL APIs, Microservices Architecture, API Integration, Event-Driven Applications, MVC Architecture, ORM Development, Backend Performance Optimization",
+    "Front-End Technologies": "JavaScript, TypeScript, React.js, Angular, AngularJS, HTML5, CSS3, Bootstrap, jQuery, AJAX",
+    "Cloud Platforms": "AWS, EC2, S3, Lambda, SQS, RDS, EMR, Cloud-based Application Deployment",
+    "Containers and DevOps": "Docker, Kubernetes, Jenkins, Bamboo, Git, GitHub, CI/CD Pipelines, Ansible, Automation Frameworks",
+    "Databases": "PostgreSQL, MySQL, Oracle, SQL Server, MongoDB, Cassandra, Redis, SQLite",
+    "Data Engineering and Analytics": "ETL Development, Informatica, SSIS, Hadoop, Spark, PySpark, Hive, HDFS, Data Transformation, Data Processing Pipelines",
+    "Testing and Quality Engineering": "pytest, Unit Testing, TDD, Selenium, JUnit, Load Testing, Performance Testing",
+    "Development Tools": "PyCharm, IntelliJ, Eclipse, Jira, Confluence, Bugzilla"
+  },
+  "experience": [
+    {
+      "company": "Hospitals and Health Care",
+      "title": "Sr. Full Stack Python Developer",
+      "location": "",
+      "date": "Jun 2024 – Present",
+      "start": "2024-06",
+      "end": "",
+      "current": true,
+      "description": "",
+      "bullets": [
+        "Designed, developed, and maintained enterprise-grade backend applications using Python 3.x, Django, Flask, and FastAPI, delivering scalable services and API-driven solutions.",
+        "Developed high-performance asynchronous APIs using FastAPI async capabilities, improving application concurrency and supporting scalable request processing.",
+        "Designed cloud-native Python applications on AWS, leveraging Lambda, EC2, RDS, SQS, IAM, and CloudWatch to build secure and highly available backend solutions.",
+        "Implemented secure API development practices including authentication, authorization, input validation, secure data handling, and enterprise application security standards.",
+        "Built and optimized RESTful APIs and microservices using FastAPI and Django REST Framework, enabling secure communication between internal applications, external systems, and third-party integrations.",
+        "Designed backend service architecture using Python object-oriented programming principles, reusable components, design patterns, and clean coding practices.",
+        "Developed and deployed containerized Python applications using Docker and Kubernetes, supporting reliable production deployments and application scalability.",
+        "Created AWS-based serverless solutions using Python AWS Lambda functions, automating business workflows, event-driven processing, and backend operations.",
+        "Developed application monitoring and troubleshooting practices using centralized logging, performance analysis, and production health monitoring to improve system reliability.",
+        "Implemented Python-based data processing workflows using pandas, NumPy, JSON/XML processing, and database integrations to transform and manage enterprise data.",
+        "Designed and integrated database solutions using PostgreSQL, MySQL, Oracle, and MongoDB, including data modeling, query optimization, and application-level database interactions.",
+        "Optimized backend services, database queries, and API workflows to improve application response times, scalability, and overall system performance.",
+        "Integrated Python applications with external systems through REST APIs, SOAP services, message queues, and structured data exchange formats including JSON and XML.",
+        "Implemented automated testing strategies using unit testing and test-driven development practices to improve software quality and reduce production defects.",
+        "Designed and maintained CI/CD workflows using Jenkins, Git-based source control, and automated deployment processes to streamline application delivery.",
+        "Performed production troubleshooting, debugging, performance analysis, and root-cause analysis to improve system stability and minimize application downtime.",
+        "Mentored junior developers through code reviews, technical guidance, development best practices, and architectural discussions while collaborating with product managers and stakeholders."
+      ]
+    },
+    {
+      "company": "IT Services and IT Consulting",
+      "title": "Full Stack Python Developer",
+      "location": "",
+      "date": "Apr 2022 – May 2024",
+      "start": "2022-04",
+      "end": "2024-05",
+      "current": false,
+      "description": "",
+      "bullets": [
+        "Designed and developed scalable Python microservices supporting enterprise workflows, improving API response time by 30% through asynchronous processing and database optimization.",
+        "Built reusable Python automation frameworks and scripting solutions using Python and Shell scripting to reduce manual operational tasks and improve engineering efficiency.",
+        "Designed and implemented cloud-based application solutions using AWS services including Lambda, EC2, S3, RDS, and EMR to support scalable and reliable deployments.",
+        "Managed containerized application deployments using Kubernetes, including service configuration, scaling, deployment validation, and production troubleshooting.",
+        "Automated development and deployment workflows using scripting, CI/CD pipelines, and infrastructure automation practices.",
+        "Designed API standards, reusable service components, and integration patterns to improve maintainability across enterprise applications.",
+        "Implemented logging and monitoring solutions to identify application issues, analyze performance trends, and improve operational reliability.",
+        "Integrated secure authentication mechanisms and followed best practices for protecting application data and enterprise APIs.",
+        "Created and maintained Django-based web applications using MVC architecture, Django ORM, templates, authentication workflows, and database integrations.",
+        "Designed and developed microservice components and Kubernetes deployment automation tools to simplify application onboarding and service lifecycle management.",
+        "Built and maintained CI/CD pipelines using Jenkins, Git, GitHub, and automation tools, improving deployment consistency and reducing release effort.",
+        "Developed responsive frontend components using React, Angular, JavaScript, HTML5, CSS3, Bootstrap, and jQuery, collaborating closely with backend teams for full-stack delivery.",
+        "Designed and optimized database solutions using MySQL, PostgreSQL, and SQL, including data modeling, query optimization, and application performance improvements.",
+        "Developed data processing and analytics workflows using pandas, NumPy, SciPy, scikit-learn, Matplotlib, and Python-based machine learning libraries.",
+        "Processed structured and semi-structured data formats including JSON, XML, CSV, and flat files, implementing transformation and validation workflows.",
+        "Supported application reliability by troubleshooting production issues, analyzing performance bottlenecks, and implementing corrective solutions.",
+        "Collaborated with product owners, architects, QA teams, and stakeholders in Agile environments to deliver scalable software solutions aligned with business requirements."
+      ]
+    },
+    {
+      "company": "Information Services",
+      "title": "Senior Python Developer",
+      "location": "",
+      "date": "Dec 2019 – Mar 2022",
+      "start": "2019-12",
+      "end": "2022-03",
+      "current": false,
+      "description": "",
+      "bullets": [
+        "Designed, developed, and maintained scalable backend applications using Python, Django, Flask, and FastAPI, delivering reliable enterprise solutions and REST-based services.",
+        "Built and enhanced backend APIs using Python frameworks to support web applications, mobile applications, and external system integrations.",
+        "Designed and implemented modular application architecture using object-oriented programming principles, reusable components, and industry-standard design patterns.",
+        "Created and optimized database-driven applications using PostgreSQL, MySQL, MongoDB, and Redis, including data modeling, query optimization, and backend persistence solutions.",
+        "Designed event-driven backend components using messaging technologies such as RabbitMQ to enable asynchronous processing and scalable workflows.",
+        "Developed scalable data pipelines using Python, PySpark, and distributed processing frameworks to transform and process large datasets.",
+        "Implemented data validation, transformation, and quality checks to improve reliability of enterprise data processing workflows.",
+        "Supported migration and deployment of Python applications into cloud environments using AWS and Azure services.",
+        "Performed production troubleshooting, root cause analysis, and performance optimization to maintain application availability.",
+        "Built data ingestion and processing services to collect, validate, transform, and store enterprise data using Python-based pipelines.",
+        "Developed PySpark-based data processing jobs for large-scale data transformation and analytics workloads.",
+        "Worked with Hadoop ecosystem technologies including HDFS, Hive, HBase, MapReduce, Sqoop, and Spark to support big data processing solutions.",
+        "Developed automation scripts using Python, Bash, and command-line tools to improve operational efficiency and reduce repetitive manual activities.",
+        "Implemented API testing, unit testing, and test-driven development practices to improve application reliability and maintain code quality.",
+        "Supported cloud-based application deployments using AWS and Azure services, including VM-based deployments, storage services, and application hosting environments."
+      ]
+    },
+    {
+      "company": "Software development",
+      "title": "Python Developer",
+      "location": "",
+      "date": "Jul 2017 – Nov 2019",
+      "start": "2017-07",
+      "end": "2019-11",
+      "current": false,
+      "description": "",
+      "bullets": [
+        "Developed and maintained backend applications using Python, Django, and Flask, implementing business logic, API services, and data-driven application workflows.",
+        "Designed and developed reusable Python components for application functionality, data processing, automation, and system integrations.",
+        "Built and consumed RESTful and SOAP web services using Python to enable communication between internal applications and external systems.",
+        "Developed database-driven applications by creating Python data access modules, integrating with Oracle, PostgreSQL, and MySQL databases.",
+        "Designed and optimized SQL queries, stored procedures, functions, triggers, and database objects to support application requirements and improve performance.",
+        "Developed Django-based web applications using MVC architecture, Django ORM, templates, and backend service integrations.",
+        "Created Python scripts for automation, data extraction, XML/JSON processing, and repetitive operational tasks to improve development efficiency.",
+        "Built and maintained AWS-based serverless application components using AWS Lambda, S3, DynamoDB, IAM, Cognito, and CloudFormation.",
+        "Developed backend APIs and application services using Python frameworks to support scalable web application functionality.",
+        "Implemented frontend integrations using HTML5, CSS3, JavaScript, jQuery, and Bootstrap to deliver responsive web interfaces.",
+        "Supported data processing workflows using Python libraries including NumPy, SciPy, and Matplotlib for analytics and reporting requirements.",
+        "Implemented automated testing frameworks using Python testing tools and Selenium to improve application quality.",
+        "Developed data ingestion and transformation workflows using Hadoop ecosystem technologies including Sqoop, Hive, Pig, HDFS, and MapReduce.",
+        "Automated application deployment and configuration activities using tools such as Puppet and Chef, improving environment consistency.",
+        "Performed debugging, troubleshooting, and production support activities to identify application issues and implement effective solutions.",
+        "Collaborated with developers, QA engineers, database teams, and business stakeholders in Agile environments to deliver reliable software solutions."
+      ]
+    }
+  ],
+  "projects": [],
+  "education": [
+    {
+      "school": "",
+      "degree": "Bachelors in Computer Science",
+      "years": "",
+      "grade": ""
+    }
+  ],
+  "certifications": [],
+  "_layout": "ats"
+}

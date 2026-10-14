@@ -92,17 +92,17 @@ def get_preview_html(resume_id: str, template: str = "word") -> str:
 # The ways of tailoring the toggle offers: what the backend is asked for, and what the user is told.
 # The first one is the one selected when the box opens. The backend's older "full" tailoring is not offered here.
 TAILORING_WAYS = {
-    "Complete — tailored hard, nothing dropped": {
-        "mode": "complete",
-        "help": "Tailors as hard as Focused: the posting's title on top, the bullets that serve the posting reworded in "
-                "its words and moved to the top of each role, the skills it asks for first. Every other bullet and "
-                "skill stays below, as you wrote it.",
-    },
     "Focused — two pages, only what this job asks for": {
         "mode": "focused",
         "help": "Rebuilds a short résumé for this one posting: the posting's title on top, five bullets for your latest "
                 "role, four for the one before and three for each earlier one, reworded in the posting's own words. "
                 "Every role stays.",
+    },
+    "Complete — tailored hard, nothing dropped": {
+        "mode": "complete",
+        "help": "Tailors as hard as Focused: the posting's title on top, the bullets that serve the posting reworded in "
+                "its words and moved to the top of each role, the skills it asks for first. Every other bullet and "
+                "skill stays below, as you wrote it.",
     },
 }
 
@@ -133,7 +133,6 @@ def start_tailoring(base_resume_id: str, job_description: str, way: str = "") ->
 
 # The ways of scoring the toggle offers: what the backend is asked for, and what the user is told.
 SCORING_METHODS = {
-    "Rubric — GPT-6 Luna on the ChatGPT plan (Codex, local backend)": {"scorer": "rubric", "model": "luna_plan"},
     "Rubric — GPT-6 Luna on OpenRouter": {"scorer": "rubric", "model": "luna"},
 }
 
@@ -238,22 +237,9 @@ def get_pdf(resume_id: str, template: str = "word") -> tuple:
 # The model line-ups the toggle switches between. Each names both jobs explicitly
 # rather than leaving one to fall through to the primary: an empty override follows
 # `llm_provider`, which is not necessarily any of these.
-# Only the two GPT-6 Luna engines are offered here, Codex first; the backend still serves every other
-# line-up (OpenRouter flash + gemma, Haiku, Claude Code) for the React frontend and for anyone setting it directly.
+# Only GPT-6 Luna on OpenRouter is offered here; the backend still serves every other line-up (Codex,
+# OpenRouter flash + gemma, Haiku, Claude Code) for the React frontend and for anyone setting it directly.
 ENGINES = {
-    "Codex": {
-        "label": "Codex — gpt-6-luna, normal effort",
-        "help": "Both jobs on the Codex CLI with your ChatGPT plan, on GPT-6 Luna at its normal effort: about 30-40s to import "
-                "a long résumé, 25-30s for a Focused copy and 30-50s for a Complete one. High effort was tested and gave the "
-                "same results in about twice the time. Local only — a hosted backend has no codex binary to run and no way "
-                "to log one in.",
-        "settings": {
-            "parse_llm_provider": "codex_cli",
-            "parse_llm_model": "gpt-6-luna",
-            "cv_tailor_llm_provider": "codex_cli",
-            "cv_tailor_llm_model": "gpt-6-luna",
-        },
-    },
     "Luna": {
         "label": "OpenRouter — GPT-6 Luna",
         "help": "GPT-6 Luna through OpenRouter for both jobs: about 25s to import a long résumé and 35s to tailor it. Works on a hosted backend, since it needs only the OpenRouter key.",

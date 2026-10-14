@@ -1,0 +1,72 @@
+Job Description
+
+About Persistent
+
+We are an AI-led, platform-driven Digital Engineering and Enterprise Modernization partner, combining deep technical expertise and industry experience to help our clients anticipate what's next. Our offerings and proven solutions create a unique competitive advantage for our clients by giving them the power to see beyond and rise above. We work with many industry-leading organizations across the world, including 20 Fortune 50 companies and 4 of the 5 top banks in both the US and India, and numerous innovators across the healthcare ecosystem.
+
+Our disruptor's mindset, commitment to client success, and agility to thrive in the dynamic environment have enabled us to sustain our growth momentum. Persistent has been recognized across top industry platforms for innovation, leadership, and inclusion. We reported $1,654.4M FY26 revenue with 17.4% Y-o-Y growth. We have delivered 24 sequential quarters of growth with $436.0M in Q4 FY26 revenue, up 3.2% Q-o-Q and 16.2% Y-o-Y growth. Our 27,500+ global team members, located in 18 countries, have been instrumental in helping the market leaders transform their industries. We have been recognized as the Fastest Growing IT Services Brand Globally in the 2026 Brand Finance IT Services 25 Report. We named a Leader in the Everest Group Private Equity (PE) Services PEAK Matrix Assessment 2026 and Software Product Engineering PEAK Matrix Assessment 2026.
+
+About Position:
+
+We are looking for an experienced Senior Java Full Stack Developer to design, develop, and maintain scalable enterprise applications. The ideal candidate will have strong expertise in Java backend development, modern frontend technologies, microservices architecture, and event-driven systems. This role requires hands-on experience in building high-performance applications using Java, Spring Boot, React.js, Kafka, and MongoDB while working closely with cross-functional teams in an Agile environment.
+
+Role: Senior Java Full Stack Developer
+Location: Bengaluru, Hyderabad
+Experience: 5 to 9 Years
+Job Type: Full-Time Employment
+
+What You'll Do:
+
+Design, develop, and maintain scalable backend services using Java and Spring Boot.
+Build and enhance microservices-based applications following modern architecture principles.
+Develop and maintain responsive, reusable, and high-performance user interfaces using React.js.
+Implement event-driven solutions and asynchronous messaging using Apache Kafka.
+Design and develop RESTful APIs and backend integrations.
+Work with MongoDB and other databases for efficient data storage and retrieval.
+Participate in application architecture discussions and contribute to technical design decisions.
+Collaborate with product managers, architects, QA teams, and business stakeholders to deliver high-quality solutions.
+Perform code reviews and ensure adherence to coding standards, security practices, and development best practices.
+Troubleshoot, debug, and resolve application issues across the technology stack.
+Optimize application performance, scalability, and reliability.
+Participate in Agile ceremonies including sprint planning, daily stand-ups, retrospectives, and backlog refinement sessions.
+Contribute to CI/CD processes and support application deployment activities.
+Create and maintain technical documentation, design specifications, and implementation guidelines.
+
+Expertise You'll Bring:
+
+5 to 9 years of hands-on experience in Java Full Stack Development.
+Strong expertise in Core Java, Java 8+, and object-oriented programming principles.
+Extensive experience in Spring Boot and microservices architecture.
+Hands-on experience with React.js and modern frontend development practices.
+Strong understanding of REST APIs and web services development.
+Experience implementing event-driven architectures using Kafka.
+Hands-on experience working with MongoDB and NoSQL databases.
+Good understanding of distributed systems and microservices-based application design.
+Experience working in Agile/Scrum delivery environments.
+Familiarity with version control systems such as Git.
+Experience with application debugging, troubleshooting, and performance optimization.
+Understanding of security, scalability, and reliability best practices for enterprise applications.
+Strong analytical, problem-solving, and debugging skills.
+Excellent communication and collaboration abilities.
+Ability to work effectively in cross-functional and globally distributed teams.
+
+Benefits:
+
+Competitive salary and benefits package
+Culture focused on talent development with quarterly growth opportunities and company-sponsored higher education and certifications
+Opportunity to work with cutting-edge technologies
+Employee engagement initiatives such as project parties, flexible work hours, and Long Service awards
+Annual health check-ups
+Insurance coverage: group term life, personal accident, and Mediclaim hospitalization for self, spouse, two children, and parents
+
+Values-Driven, People-Centric & Inclusive Work Environment:
+
+Persistent is dedicated to fostering diversity and inclusion in the workplace. We invite applications from all qualified individuals, including those with disabilities, and regardless of gender or gender preference. We welcome diverse candidates from all backgrounds.
+
+We support hybrid work and flexible hours to fit diverse lifestyles.
+Our office is accessibility-friendly, with ergonomic setups and assistive technologies to support employees with physical disabilities.
+If you are a person with disabilities and have specific requirements, please inform us during the application process or at any time during your employment
+
+Let's unleash your full potential at Persistent - persistent.com/careers
+
+“Persistent is an Equal Opportunity Employer and prohibits discrimination and harassment of any kind.”

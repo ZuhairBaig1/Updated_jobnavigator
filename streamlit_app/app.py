@@ -13,6 +13,8 @@ import time
 
 import base64
 
+from pathlib import Path
+
 import streamlit as st
 
 import importlib
@@ -91,6 +93,35 @@ def _render_document(html: str, height: int = 1150):
         pass
     encoded = base64.b64encode(html.encode("utf-8")).decode("ascii")
     st.iframe(f"data:text/html;base64,{encoded}", height=height)
+
+
+# Sample postings to try the app with, two per sample résumé's role. Kept as text files beside the
+# app so one can be swapped without touching code.
+SAMPLE_JDS_FOLDER = Path(__file__).parent / "sample_jds"
+SAMPLE_JDS = {
+    "Python — FactSet, Senior Software Engineer (Python Fullstack)": "python_1_factset_senior_python_fullstack.txt",
+    "Python — Lead I, Software Development (Python, data platform)": "python_2_lead_python_data_platform.txt",
+    "Java — Persistent, Senior Java Full Stack Developer": "java_1_persistent_senior_java_full_stack.txt",
+    "Java — Cubic, Senior Software Engineer - Java": "java_2_cubic_senior_java_engineer.txt",
+    "DevOps — DevOps Senior Engineer (AWS EKS, ArgoCD)": "devops_1_senior_devops_eks_argocd.txt",
+    "DevOps — GCP DevOps Engineer": "devops_2_gcp_devops_engineer.txt",
+}
+
+
+def _sample_jd_picker(text_key: str):
+    """A choice of sample postings that fills the job description box at `text_key`.
+
+    It sits outside the box's form, since a widget inside a form cannot act until the form is
+    submitted. Picking a sample overwrites whatever the box held.
+    """
+    def _fill():
+        name = st.session_state[f"sample-{text_key}"]
+        if name in SAMPLE_JDS:
+            st.session_state[text_key] = (SAMPLE_JDS_FOLDER / SAMPLE_JDS[name]).read_text(encoding="utf-8")
+
+    st.selectbox("Sample job description", list(SAMPLE_JDS), index=None, key=f"sample-{text_key}",
+                 placeholder="Or pick a sample job description…", on_change=_fill,
+                 label_visibility="collapsed")
 
 
 def _ids_of_its_tailored_copies(resume_id: str) -> set:
@@ -322,6 +353,7 @@ def _ats_score_panel(resume_id: str):
             st.caption("Scored against the job description this copy was tailored for.")
             job_description = ""
         else:
+            _sample_jd_picker(f"ats-jd-{resume_id}")
             job_description = st.text_area("Job description to score against", height=160,
                                            key=f"ats-jd-{resume_id}", placeholder="Paste the full posting here…")
         method = st.radio("Scoring method", list(api.SCORING_METHODS), key=f"ats-method-{resume_id}", horizontal=True,
@@ -553,6 +585,7 @@ with left:
 
             # the JD box, opened under the base it will tailor
             if st.session_state.tailor_for == base_id:
+                _sample_jd_picker(f"jdtext-{base_id}")
                 with st.form(key=f"jd-{base_id}", border=False):
                     jd = st.text_area("Paste the job description", height=220,
                                       key=f"jdtext-{base_id}",
@@ -610,6 +643,10 @@ with left:
                                         "seconds": secs, "engine": _choice, "job": "Tailored"}
                                 st.session_state.tailor_for = None
                                 st.session_state.open_copies |= {base_id}
+                                # Show the new copy straight away, as an import shows the résumé it made.
+                                fresh_copies = {c["id"]: c for c in (now or {}).get("copies") or []} if made else {}
+                                for new_id in made:
+                                    _select(new_id, _copy_label(fresh_copies.get(new_id, {})))
                                 st.rerun()
                             else:
                                 st.error(f"The run ended as “{status}”. "

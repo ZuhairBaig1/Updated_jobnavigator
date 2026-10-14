@@ -1,0 +1,180 @@
+{
+  "header": {
+    "name": "Zuahir Baig",
+    "title": "",
+    "contact_items": [
+      {
+        "text": "zuhair@gmail.com",
+        "url": "mailto:zuhair@gmail.com"
+      },
+      {
+        "text": "7845123698",
+        "url": ""
+      },
+      {
+        "text": "H 1B",
+        "url": ""
+      }
+    ],
+    "contact": {
+      "location": "",
+      "email": "zuhair@gmail.com",
+      "phone": "7845123698",
+      "github": "",
+      "linkedin": ""
+    }
+  },
+  "summary": "Senior DevOps Engineer / Site Reliability Engineer with 10+ years of experience in AWS, Azure, GCP, Kubernetes, CI/CD, Terraform, GitOps, DevSecOps, observability, and production reliability. Skilled in managing EKS, AKS, and GKE platforms, automating infrastructure, improving deployment reliability, strengthening cloud security, and reducing MTTR through monitoring, incident response, runbooks, and SRE best practices. Experienced in supporting financial, healthcare, software, and retail environments with a strong focus on scalability, compliance, automation, and operational excellence.",
+  "skills": {
+    "Cloud Platforms": "AWS, EC2, EKS, S3, RDS, VPC, IAM, ELB, ALB, NLB, Route 53, CloudWatch, Auto Scaling, EBS, Secrets Manager, Systems Manager, CloudTrail, Microsoft Azure, AKS, Azure Virtual Machines, Azure Storage, Azure Virtual Network, Azure Key Vault, Azure Monitor, Azure RBAC, Azure Load Balancer, Azure Policy, Google Cloud Platform (GCP), GKE, Compute Engine, Cloud Storage, VPC Networking, Cloud Monitoring, Secret Manager, Cloud Logging",
+    "Containers & Orchestration": "Kubernetes, Docker, Helm, ArgoCD, GitOps, Kubernetes RBAC, Network Policies, Ingress, Config Maps, Secrets, HPA",
+    "Infrastructure as Code & Automation": "Terraform, Terraform Modules, Ansible, Infrastructure Automation, Environment Provisioning, Configuration Management, Policy-as-Code",
+    "CI/CD & DevOps": "Jenkins, GitHub Actions, GitLab CI/CD, Maven, Docker Pipelines, Helm Deployments, Build Automation, Release Automation, Rollback Automation",
+    "Scripting": "Python, Bash, Shell Scripting, YAML, Deployment Scripts, Health Check Automation, Backup Validation Scripts, Log Collection Scripts",
+    "Monitoring & Observability": "Prometheus, Grafana, OpenTelemetry, ELK Stack, Distributed Tracing, APM, Alerting, Dashboards",
+    "SRE & Reliability": "SLI, SLO, Error Budgets, Incident Response, MTTR Reduction, Root Cause Analysis, Blameless Postmortems, Runbooks, Capacity Planning, High Availability, Disaster Recovery",
+    "Security & DevSecOps": "RBAC, Least-Privilege Access, Secrets Management, External Secrets Operator, SAST, Dependency Scanning, Container Image Scanning, Vulnerability Remediation, SBOM, Image Signing",
+    "Governance & Compliance": "OPA/Gatekeeper, Kyverno, Cloud Policies, Tagging Governance, Encryption Validation, Access Reviews, Audit Evidence, PCI-DSS, SOX, SOC 2, HIPAA-Aligned Operations",
+    "Operating Systems": "Linux, Unix, Apache, Tomcat, Linux Administration, Patching, Package Management, User Access, File Permissions, Disk Management, Log Rotation, Performance Troubleshooting",
+    "Databases & Storage": "Amazon RDS, EBS, S3, Azure Storage, GCP Cloud Storage, Backup Checks, Snapshot Support, Recovery Validation, Storage Lifecycle Policies",
+    "Source Control & Collaboration": "Git, GitHub, GitLab, SVN, Branching, Merging, Pull Requests, Release Versioning, Code Reviews, Jira, Agile/Scrum",
+    "Documentation & Operations": "Architecture Diagrams, Deployment Standards, Troubleshooting Guides, Release Checklists, Post-Incident Reports, Compliance Documentation, Change Logs, Incident Reports"
+  },
+  "experience": [
+    {
+      "company": "Software Development",
+      "title": "Senior DevOps engineer / Site Reliability Engineer (SRE)",
+      "location": "",
+      "date": "Jul 2023 – Jun 2026",
+      "start": "2023-07",
+      "end": "2026-06",
+      "current": false,
+      "description": "",
+      "bullets": [
+        "Designed, implemented, and managed highly available Kubernetes platforms supporting containerized software products, microservices, APIs, background workers, and distributed application workloads across production and non-production environments.",
+        "Implemented GitOps deployment strategies using ArgoCD, Helm, and Git-based workflows to enable automated, auditable, repeatable, and rollback-ready application deployments.",
+        "Implemented multi-cloud platform standards across AWS, Azure, and GCP by aligning Kubernetes operations, Terraform modules, IAM/RBAC controls, secrets management, logging, tagging, monitoring, and deployment governance across environments.",
+        "Integrated DevSecOps controls into CI/CD pipelines, including SAST, dependency scanning, container image scanning, secrets detection, policy checks, and vulnerability validation.",
+        "Built self-service platform capabilities using reusable Terraform modules, GitOps workflows, Helm templates, and CI/CD patterns to improve developer onboarding and deployment consistency.",
+        "Reduced deployment failures by improving automated release validation, rollback checks, post-deployment monitoring, health probes, and environment readiness controls for production workloads.",
+        "Improved SRE operational maturity by reducing alert noise, tuning SLO-based alerts, enriching incident context, and aligning escalation paths with service ownership.",
+        "Implemented automated remediation workflows for recurring Kubernetes and cloud infrastructure issues, reducing manual intervention and improving recovery speed for critical services.",
+        "Implemented software supply chain security practices including SBOM generation, image signing support, artifact repository controls, branch protection, and approval-based release workflows.",
+        "Built dashboards and alerting rules for application latency, error rates, saturation, resource utilization, pod restarts, deployment failures, API health, and infrastructure availability.",
+        "Defined and monitored Service Level Indicators, Service Level Objectives, and error budgets to improve reliability, prioritize engineering work, and align platform operations with business impact.",
+        "Conducted blameless postmortems, root cause analysis, corrective action tracking, and reliability reviews to prevent recurring incidents and improve operational maturity.",
+        "Reduced Mean Time to Recovery by improving alert quality, escalation paths, runbook accuracy, automated health checks, and service-level dashboards for critical applications.",
+        "Improved developer experience by creating self-service deployment templates, reusable pipeline patterns, standardized infrastructure modules, onboarding guides, and platform documentation.",
+        "Collaborated with development teams to improve application resiliency, graceful degradation, retry handling, timeout configuration, health checks, logging quality, and operational readiness.",
+        "Conducted production readiness reviews for new services, validating monitoring coverage, alert thresholds, scaling behavior, deployment strategy, rollback process, and support documentation.",
+        "Optimized cloud infrastructure utilization through rightsizing, autoscaling, resource quotas, reserved capacity reviews, storage lifecycle policies, and cost visibility dashboards.",
+        "Automated infrastructure provisioning and configuration updates using Terraform, Ansible, Python, and Bash, reducing manual operational effort across cloud environments.",
+        "Implemented centralized secrets management using AWS Secrets Manager, Azure Key Vault, GCP Secret Manager, Kubernetes secrets, and External Secrets Operator.",
+        "Supported certificate lifecycle automation using cert-manager, ingress TLS configuration, renewal monitoring, and secure certificate handling across Kubernetes-based application platforms.",
+        "Implemented policy-as-code and governance controls using tools such as OPA/Gatekeeper, Kyverno, cloud policies, tagging standards, and environment compliance checks.",
+        "Improved centralized logging practices by standardizing structured logs, correlation IDs, log retention, searchable fields, and traceability across distributed software services.",
+        "Partnered with security teams to remediate vulnerabilities, strengthen IAM/RBAC controls, review container image risks, validate encryption, and improve compliance evidence collection."
+      ]
+    },
+    {
+      "company": "Financial Domain",
+      "title": "Senior DevOps engineer",
+      "location": "",
+      "date": "Dec 2020 – Jun 2023",
+      "start": "2020-12",
+      "end": "2023-06",
+      "current": false,
+      "description": "",
+      "bullets": [
+        "Designed and managed scalable AWS cloud infrastructure supporting financial applications, payment platforms, customer portals, transaction processing systems, and enterprise distributed services.",
+        "Built and maintained Kubernetes clusters on Amazon EKS to support containerized microservices across development, QA, staging, and production financial application environments.",
+        "Improved financial application release stability by validating Jenkins pipelines, Helm deployments, infrastructure changes, rollback plans, and post-release service health.",
+        "Containerized legacy and modern applications using Docker and standardized container images, runtime configurations, environment variables, and deployment patterns across engineering teams.",
+        "Provisioned and maintained Azure infrastructure components including Virtual Machines, Azure Storage, Virtual Networks, Key Vault, Azure Monitor, and access controls for internal financial platform workloads.",
+        "Automated infrastructure provisioning, environment setup, configuration updates, deployment validation, and operational maintenance tasks using Terraform, Ansible, Python, and Shell scripting.",
+        "Configured secure cloud networking including VPCs, public and private subnets, route tables, NAT gateways, internet gateways, security groups, NACLs, load balancers, and Route 53 DNS.",
+        "Improved reliability of financial application platforms by strengthening deployment validation, monitoring coverage, rollback readiness, and incident response procedures for customer-facing systems.",
+        "Supported cloud cost optimization by reviewing AWS usage trends, identifying underutilized resources, improving tagging standards, and recommending rightsizing actions for financial workloads.",
+        "Implemented Helm-based Kubernetes deployments to improve release consistency, configuration management, rollback support, and environment standardization across financial microservices.",
+        "Integrated security scanning and quality gates into CI/CD pipelines using SonarQube, dependency checks, container image scanning, and approval controls to improve release security.",
+        "Managed IAM policies, roles, security groups, access keys, secrets, and least-privilege permissions to strengthen cloud access control for financial systems.",
+        "Performed capacity planning, autoscaling configuration, resource optimization, and performance reviews to support growing transaction volumes and business-critical workloads.",
+        "Supported PCI-DSS, SOX, and SOC 2-aligned operations by maintaining deployment records, change logs, access evidence, security controls, and audit-ready infrastructure documentation.",
+        "Implemented change control practices by documenting release plans, approval steps, rollback procedures, validation results, and production deployment evidence for financial applications.",
+        "Supported cloud security hardening by enabling encryption, tightening IAM access, reviewing security groups, validating S3 bucket policies, and improving logging coverage.",
+        "Supported high-availability architecture using load balancers, Auto Scaling groups, multi-AZ deployments, RDS backups, failover planning, and resilient infrastructure design."
+      ]
+    },
+    {
+      "company": "Hospital and Healthcare",
+      "title": "DevOps engineer",
+      "location": "",
+      "date": "Jun 2018 – Nov 2020",
+      "start": "2018-06",
+      "end": "2020-11",
+      "current": false,
+      "description": "",
+      "bullets": [
+        "Developed and maintained Jenkins CI/CD pipelines to automate build, testing, packaging, and deployment workflows for healthcare applications across development, QA, staging, and production environments.",
+        "Managed AWS infrastructure services including EC2, S3, RDS, VPC, IAM, ELB, Route 53, CloudWatch, Auto Scaling, EBS, and security groups.",
+        "Supported cloud infrastructure for patient portals, appointment scheduling systems, claims applications, provider operations platforms, and internal healthcare business applications.",
+        "Implemented Docker-based containerization to improve deployment consistency, environment portability, application packaging, and release reliability across healthcare application environments.",
+        "Supported secure healthcare deployments by validating environment variables, secrets handling, release approvals, rollback steps, access permissions, and post-deployment health checks.",
+        "Automated server configuration, application deployments, package installation, patching support, and environment setup using Ansible playbooks and reusable automation scripts.",
+        "Implemented monitoring and alerting using AWS CloudWatch, Linux monitoring tools, and application health checks to improve availability and early issue detection.",
+        "Configured centralized logging for application logs, server logs, Jenkins logs, Apache/Tomcat logs, and deployment logs to improve troubleshooting and operational visibility.",
+        "Supported production deployments by coordinating release windows, validating pre-deployment checks, monitoring application health, verifying post-deployment status, and assisting rollback activities.",
+        "Improved healthcare application availability by enhancing CloudWatch alerts, Linux health checks, deployment validation steps, and operational runbooks for patient-facing systems.",
+        "Automated routine healthcare environment checks using Python and Shell scripts to validate services, logs, storage usage, backups, application health, and deployment readiness.",
+        "Performed troubleshooting and root cause analysis for application failures, infrastructure alerts, deployment errors, server performance issues, connectivity problems, and environment configuration defects.",
+        "Managed Linux server administration activities including patching, package updates, user access, file permissions, disk management, service restarts, log rotation, and performance tuning.",
+        "Supported AWS IAM access control, security group updates, key-pair management, least-privilege permissions, encrypted storage usage, and basic cloud security hardening practices.",
+        "Supported HIPAA-aligned operations by following secure access practices, protecting sensitive healthcare data, reviewing logs carefully, and avoiding PHI exposure during troubleshooting.",
+        "Assisted with PHI-safe logging practices by helping teams reduce sensitive data exposure in logs, alerts, build outputs, deployment records, and operational documentation.",
+        "Supported Azure-based healthcare infrastructure components including Virtual Machines, Storage Accounts, Virtual Networks, Key Vault, and Azure Monitor for internal applications and non-production environments.",
+        "Supported audit and compliance readiness by maintaining deployment records, change logs, access documentation, backup evidence, patch records, and infrastructure configuration details."
+      ]
+    },
+    {
+      "company": "Retail",
+      "title": "Junior DevOps Engineer",
+      "location": "",
+      "date": "Feb 2016 – May 2018",
+      "start": "2016-02",
+      "end": "2018-05",
+      "current": false,
+      "description": "",
+      "bullets": [
+        "Administered Linux servers supporting retail web applications, inventory systems, order processing platforms, product catalog services, and internal business applications across multiple environments.",
+        "Configured and maintained Jenkins jobs to support continuous integration, automated builds, package creation, and deployment support for Java-based retail applications.",
+        "Monitored server performance, application availability, disk utilization, CPU usage, memory consumption, service uptime, and application response issues across retail environments.",
+        "Performed log analysis using Linux system logs, Apache logs, Tomcat logs, Jenkins build logs, and application logs to troubleshoot deployment and runtime issues.",
+        "Supported Apache and Tomcat server administration, including configuration updates, application deployments, service restarts, log rotation, access checks, and basic SSL certificate support.",
+        "Improved retail release stability by validating Jenkins build results, Apache/Tomcat service status, application logs, rollback steps, and post-deployment functionality.",
+        "Assisted with Linux patching, package installation, software upgrades, configuration changes, server restarts, and scheduled maintenance activities under senior engineer guidance.",
+        "Managed Linux user accounts, groups, file permissions, SSH access, sudo privileges, and basic access control settings to support secure server operations.",
+        "Participated in build and release management activities, helping move application changes across development, QA, staging, and production environments with proper validation.",
+        "Assisted senior engineers with basic AWS environment support including EC2 instance checks, S3 file storage validation, IAM access requests, security group reviews, and CloudWatch alert follow-ups.",
+        "Improved deployment consistency by following release checklists, validating environment configurations, reviewing Jenkins build results, and confirming application startup after deployments.",
+        "Reduced repetitive manual work by creating Shell scripts for server checks, log reviews, cleanup activities, file movement, and basic deployment verification tasks.",
+        "Assisted with Docker image builds, container configuration checks, and basic container deployment validation for retail web applications under senior DevOps engineer guidance.",
+        "Helped monitor scheduled retail jobs, batch processes, file transfers, and order-processing workflows to identify failures, delays, and environment-related issues.",
+        "Created and maintained deployment documentation, environment notes, release checklists, rollback steps, and troubleshooting guides for retail application support activities.",
+        "Supported retail peak-season readiness by helping validate monitoring coverage, server capacity, deployment stability, backup readiness, and rollback procedures before high-traffic periods.",
+        "Assisted with environment refresh activities by coordinating configuration updates, application deployments, test data movement, and validation support for QA and staging environments.",
+        "Supported basic database operations by assisting with backup checks, connectivity validation, script execution, and coordination with database teams during releases."
+      ]
+    }
+  ],
+  "projects": [],
+  "education": [
+    {
+      "school": "",
+      "degree": "Bachelors in Computer Science",
+      "years": "",
+      "grade": ""
+    }
+  ],
+  "certifications": [],
+  "_layout": "ats"
+}

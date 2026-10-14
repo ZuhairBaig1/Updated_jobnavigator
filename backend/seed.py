@@ -2,6 +2,7 @@
 import logging
 import json
 import secrets
+from pathlib import Path
 from backend.models.db import SessionLocal, Setting, Company, Search, Resume
 from sqlalchemy import text
 
@@ -1208,66 +1209,19 @@ SEED_SEARCHES = [
 ]
 
 
-MOCK_RESUME_JSON = {
-    "header": {
-        "name": "Alex Johnson",
-        "contact_items": [
-            {"text": "San Francisco, CA", "url": ""},
-            {"text": "alex@example.com", "url": "mailto:alex@example.com"},
-            {"text": "linkedin.com/in/alexjohnson", "url": "https://linkedin.com/in/alexjohnson"},
-        ],
-    },
-    "summary": "Product manager with 8 years of experience building B2B SaaS products. Led cross-functional teams of 5-15 across 3 product lines, driving $12M ARR growth. Strong background in data-driven decision making, user research, and agile delivery.",
-    "experience": [
-        {
-            "company": "TechCorp",
-            "title": "Senior Product Manager",
-            "location": "San Francisco, CA",
-            "date": "2021 - Present",
-            "bullets": [
-                "Led product strategy for enterprise platform serving **2,000+ customers**, increasing NPS from 32 to 58",
-                "Shipped AI-powered search feature that reduced time-to-resolution by **40%** across support workflows",
-                "Managed $3M annual budget and prioritized roadmap across 3 engineering squads",
-                "Drove adoption of experimentation framework, running **50+ A/B tests** per quarter",
-            ],
-        },
-        {
-            "company": "StartupXYZ",
-            "title": "Product Manager",
-            "location": "New York, NY",
-            "date": "2018 - 2021",
-            "bullets": [
-                "Launched MVP marketplace product from 0 to **$2M ARR** in 18 months",
-                "Defined and executed migration from monolith to microservices architecture",
-                "Conducted **100+ user interviews** to inform product-market fit pivots",
-                "Collaborated with design team to reduce onboarding drop-off by **35%**",
-            ],
-        },
-        {
-            "company": "BigFinance Inc.",
-            "title": "Business Analyst",
-            "location": "Chicago, IL",
-            "date": "2016 - 2018",
-            "bullets": [
-                "Built dashboards and reporting tools for trading desk, saving **20 hours/week** of manual work",
-                "Translated business requirements into technical specs for engineering team",
-                "Led UAT for $5M regulatory compliance project delivered on schedule",
-            ],
-        },
-    ],
-    "skills": {
-        "Product": "Roadmapping, A/B Testing, User Research, PRDs, OKRs, Agile/Scrum",
-        "Technical": "SQL, Python, Jira, Amplitude, Mixpanel, Figma, REST APIs",
-        "Domain": "B2B SaaS, Fintech, Marketplace, Enterprise, AI/ML Products",
-    },
-    "education": [
-        {
-            "school": "University of California, Berkeley",
-            "location": "Berkeley, CA",
-            "degree": "B.S. Computer Science, Minor in Business Administration",
-        },
-    ],
-}
+# The sample base résumés a new install starts with, one per role the app is tried on. Each file
+# is the parser's own output for the PDF of the same résumé, so the samples look exactly as an
+# import of that PDF would. The first one becomes the default résumé.
+SAMPLE_RESUMES_FOLDER = Path(__file__).parent / "sample_resumes"
+SAMPLE_RESUMES = (
+    ("Python resume-2", "python.json"),
+    ("Senior_Full_Stack_Java_Developer_Resume", "java.json"),
+    ("Asif_DevOps", "devops.json"),
+)
+
+
+def sample_resume_json(file_name: str) -> dict:
+    return json.loads((SAMPLE_RESUMES_FOLDER / file_name).read_text(encoding="utf-8"))
 
 def seed_searches(db):
     """Seed default searches if none exist (except LinkedIn Extension which is always ensured)."""
@@ -1287,33 +1241,36 @@ def seed_searches(db):
 
 
 def seed_mock_resume(db):
-    """Seed a mock base Resume for demonstration and set it as default for all companies; bails if any base Resume already exists."""
+    """Seed the sample base résumés and make the first the default for all companies; bails if any base Resume already exists."""
     if db.query(Resume).filter(Resume.is_base == True).count() > 0:
         return  # User already has a base resume
 
-    resume = db.query(Resume).filter(Resume.name == "Sample PM", Resume.is_base == True).first()
-    if resume is None:
+    seeded = []
+    for name, file_name in SAMPLE_RESUMES:
         resume = Resume(
-            name="Sample PM",
+            name=name,
             is_base=True,
             template="garamond_alt",
             page_format="letter",
-            json_data=MOCK_RESUME_JSON,
+            json_data=sample_resume_json(file_name),
         )
         db.add(resume)
-        db.commit()
+        seeded.append(resume)
+    db.commit()
+    for resume in seeded:
         db.refresh(resume)
+    default = seeded[0]
 
     default_row = db.query(Setting).filter(Setting.key == "default_resume_id").first()
     if default_row:
-        default_row.value = str(resume.id)
+        default_row.value = str(default.id)
     db.commit()
 
     for company in db.query(Company).all():
-        company.selected_resume_ids = [str(resume.id)]
+        company.selected_resume_ids = [str(default.id)]
     db.commit()
 
-    logger.info("Seeded mock resume 'Sample PM'")
+    logger.info("Seeded %d sample resumes", len(seeded))
 
 
 def seed_persona(db):

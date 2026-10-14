@@ -1,0 +1,51 @@
+Job description
+
+DevOps Senior Engineer | Hyderabad | 10-15 Years
+
+Role: DevOps Senior Engineer
+Location: Hyderabad (On-site)
+Experience: 10-15 Years
+Employment Type: Full-Time
+
+Key Skills
+
+    Kubernetes (EKS) & Containerization
+    AWS Cloud Services
+    ArgoCD & GitOps
+    CI/CD Automation
+    Docker
+    Python
+    Microservices Architecture
+    Observability & Monitoring Tools
+    MongoDB / NoSQL Databases
+    Distributed Tracing & Application Performance Monitoring.
+
+Mandatory Skills
+
+    Hands-on expertise in Kubernetes (EKS) and Docker Containerization
+    Strong experience with AWS Cloud Services
+    Experience with ArgoCD, CI/CD Pipelines, and Automation
+    Knowledge of Python Scripting
+    Experience with Microservices Architecture
+    Expertise in Monitoring, Observability, and Distributed Tracing Tools
+    Experience with MongoDB/NoSQL Databases
+
+Job Summary
+
+We are seeking an experienced DevOps Senior Engineer with strong expertise in Kubernetes (EKS), AWS Cloud, ArgoCD, Docker, CI/CD automation, and observability platforms. The ideal candidate will drive cloud-native infrastructure, deployment automation, and operational excellence for large-scale microservices applications.
+
+Key Responsibilities
+
+    Design, deploy, and manage Kubernetes (EKS) clusters and containerized workloads.
+    Build and maintain CI/CD pipelines and GitOps workflows using ArgoCD.
+    Automate cloud infrastructure and application deployment processes.
+    Support microservices-based applications across development, testing, and production environments.
+    Implement monitoring, logging, observability, and distributed tracing solutions.
+    Ensure platform reliability, scalability, security, and performance.
+    Collaborate with development teams to improve DevOps practices and release efficiency.
+
+Preferred Qualifications
+
+    AWS DevOps Certification
+    Bachelor's or Master's Degree in Computer Science or equivalent
+    Strong communication and stakeholder management skills

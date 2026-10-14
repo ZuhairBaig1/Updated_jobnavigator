@@ -1,0 +1,67 @@
+Senior Software Engineer - Python Fullstack Engineer at Factset
+Hyderabad, Telangana, India
+FactSet creates flexible, open data and software solutions for over 200,000 investment professionals worldwide, providing instant access to financial data and analytics that investors use to make crucial decisions.
+
+At FactSet, our values are the foundation of everything we do. They express how we act and operate , serve as a compass in our decision-making, and play a big role in how we treat each other, our clients, and our communities. We believe that the best ideas can come from anyone, anywhere, at any time, and that curiosity is the key to anticipating our clients’ needs and exceeding their expectations.
+
+Your Team's Impact
+
+At FactSet, our Mergers & Acquisitions Data Solutions Engineering team is at the forefront of delivering high-quality, actionable M&A data to the world's leading financial professionals. We are responsible for building and maintaining the robust data pipelines, tools, and systems that power FactSet's M&A content covering deals, transactions, valuations, and market intelligence across global markets. If you are passionate about financial data, engineering innovation, and making an impact in the fintech space, this is the team for you. This team is responsible to build data pipeline and tools by leveraging Python, proprietary in-house libraries, and AWS technologies. Through automation and innovative solutions, we consistently improve productivity and operational efficiency across teams. In this role, you will play a pivotal part in implementing impactful solutions that deliver significant value to the organization.
+
+Location: Hyderabad
+
+Work Arrangement: Hybrid Setup
+
+What You'll Do
+
+FactSet is seeking a Python Developer, along with good problem-solving skills, to join our engineering team responsible for making our product more scalable and reliable.
+
+Deliver high-quality, reusable and maintainable code, perform Unit / Integration Testing of assigned tasks within the estimated timelines.
+Proactive in providing technical solutions with effective communication & collaboration skills.
+Perform Code Reviews and ensure best practices are followed.
+Work in an agile team environment and collaborate with internal teams to ensure smooth product delivery.
+Ownership of end-end product & Individual contribution.
+Performance Improvements with the help of metrics provided by automatic monitoring of the product.
+Ensure high stability of the product.
+Continuous Knowledge sharing internal & external of the team.
+Collaborate with other engineers and Product Developers in a Scrum Agile environment using Jira and Confluence
+Estimate task sizes and regularly communicate progress in daily standups and biweekly Scrum meetings
+
+What We're Looking For
+
+Required
+
+Bachelor's or master's degree in computer science.
+4-6 years of overall industry experience.
+3-4 years of experience in Python.
+Strong experience and proficiency with Python, Pandas, and FastAPI .
+Strong experience with Javascript ES6+ , Typescript ,Vue 3,Pinia and Css3
+Strong analytical and problem-solving skills.
+Strong experience with API design and Test Driven Development
+Experience with AWS cloud and CI / CD (Github Actions) , Redis and Pytest
+Relational database experience, preferably with POSTGRES, MSSQL.
+Experience with Github-based development processes.
+Excellent written and verbal communication skills.
+Organized, self-directed, and resourceful with the ability to appropriately prioritize work in a fast-paced environment.
+Experience building and deploying production-level services.
+Nice to have with GenAI concepts like RAG ,AI integration ,MCP,Spec driven development and Agentic workflows / AI agents / agent orchestration.
+
+Desired Skills
+
+Work experience of Jupyter Notebooks.
+Infrastructure as code using Terraform.
+Familiar with Agile software development (Scrum is a plus).
+Experience working in a Linux/Unix environment.
+
+What's In It For You
+
+At FactSet, our people are our greatest asset, and our culture is our biggest competitive advantage. Being a FactSetter means:
+
+The opportunity to join an S&P 500 company with over 45 years of sustainable growth, powered by the entrepreneurial spirit of a start-up.
+Support for your total well-being. This includes health, life, and disability insurance, as well as retirement savings plans and a discounted employee stock purchase program, plus paid time off for holidays, family leave, and company-wide wellness days.
+Flexible work accommodations. We value work/life harmony and offer our employees a range of accommodations to help them achieve success both at work and in their personal lives.
+A global community dedicated to volunteerism and sustainability, where collaboration is always encouraged, and individuality drives solutions.
+Career progression planning with dedicated time each month for learning and development.
+Business Resource Groups open to all employees that serve as a catalyst for connection, growth, and belonging.
+
+Salary is just one component of our compensation package and is based on several factors, including but not limited to education, work experience, and certifications.

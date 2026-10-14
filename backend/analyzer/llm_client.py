@@ -408,7 +408,7 @@ async def _dispatch(provider: str, model: str, api_key: str,
         return await _call_claude_code(combined, system, model, max_tokens,
                                        response_schema, reasoning)
     elif provider == "codex_cli":
-        return await _call_codex_cli(combined, system, model, max_tokens, response_schema)
+        return await _call_codex_cli(combined, system, model, max_tokens, response_schema, reasoning)
     elif provider == "antigravity_cli":
         return await _call_antigravity_cli(_schema_in_prompt(combined, response_schema), system, model, max_tokens)
     elif provider == "openai":
@@ -776,7 +776,7 @@ def codex_model_and_effort(model: str) -> tuple:
 
 
 async def _call_codex_cli(prompt: str, system: str, model: str, max_tokens: int,
-                          response_schema: dict | None = None) -> dict:
+                          response_schema: dict | None = None, reasoning: bool | None = None) -> dict:
     """Call Codex CLI using its existing ChatGPT login, with its agent features switched off, in an empty read-only workspace."""
     import json as _json
     import os
@@ -820,7 +820,10 @@ async def _call_codex_cli(prompt: str, system: str, model: str, max_tokens: int,
             model, effort = codex_model_and_effort(model)
             if model:
                 cmd.extend(["--model", model])
-            if effort:
+            # A caller that asks for no extra thinking gets the model's own default, whatever effort the model
+            # name carries. Measured on gpt-6-luna tailoring that matches before it writes (2026-10-14): the
+            # default rewrote as many bullets as "high" and scored the same, in about a quarter less time.
+            if effort and reasoning is not False:
                 cmd.extend(["-c", f"model_reasoning_effort={_json.dumps(effort)}"])
             if schema_path:
                 cmd.extend(["--output-schema", schema_path])

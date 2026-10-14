@@ -23,6 +23,19 @@ BASE = {
     "projects": [], "education": [{"degree": "BSc Computer Science", "institution": "State University"}],
     "certifications": [],
 }
+# Four roles with more bullets than a focused copy keeps: eight, six, five and five.
+LONG = {**BASE, "experience": [
+    {"title": f"Developer {role}", "company": "", "start": f"20{24 - 2 * role}-01", "end": f"20{25 - 2 * role}-12", "current": False,
+     "bullets": [f"Built service {n} with Python." for n in range(1, count + 1)]}
+    for role, count in ((1, 8), (2, 6), (3, 5), (4, 5))]}
+
+def _long_with(number: int, text: str) -> dict:
+    """LONG with one bullet of its first role replaced."""
+    first = LONG["experience"][0]
+    bullets = [text if n == number else bullet for n, bullet in enumerate(first["bullets"], start=1)]
+    return {**LONG, "experience": [{**first, "bullets": bullets}] + LONG["experience"][1:]}
+
+
 POSTING = ("Senior Python Engineer at Acme\n\nWe are seeking a Python Developer.\n"
            "Required: Python, FastAPI, POSTGRES, MSSQL, Test Driven Development, Github Actions, Javascript ES6+, Kubernetes.")
 
@@ -71,7 +84,7 @@ def test_every_role_stays_with_its_own_title_and_dates():
 
 def test_a_role_the_reply_left_empty_keeps_its_first_bullets():
     copy = focused.build_focused_resume(_reply(work_experience=[]), BASE, POSTING)
-    assert _bullets(copy, 2) == BASE["experience"][1]["bullets"][:focused.FEWEST_BULLETS_OF_A_ROLE]
+    assert _bullets(copy, 2) == BASE["experience"][1]["bullets"]   # it has three, and a second role may have four
 
 
 def test_roles_with_no_employer_name_are_told_apart_by_their_number():
@@ -108,8 +121,9 @@ def test_education_is_copied_as_the_base_has_it():
 # ── Bullets say no more than their role ────────────────────────────────────────
 
 def test_dropped_bullets_stay_dropped():
-    copy = focused.build_focused_resume(_reply(), BASE, POSTING)
-    assert "Organised the team's yearly offsite." not in _bullets(copy, 1)
+    roles = [{"role_number": 1, "bullets": [_bullet(f"Built service {n} in Python.", n) for n in range(1, 6)]}]
+    copy = focused.build_focused_resume(_reply(work_experience=roles), LONG, POSTING)
+    assert _bullets(copy, 1) == [f"Built service {n} in Python." for n in range(1, 6)]
 
 
 def test_a_reworded_bullet_is_kept():
@@ -236,50 +250,103 @@ def test_a_short_title_does_not_end_a_sentence():
 
 # ── Must-haves stay shown, and gaps are reported ───────────────────────────────
 
-def test_a_must_have_the_chosen_bullets_no_longer_show_gets_its_best_bullet_back():
-    requirements = [{"requirement": "POSTGRES", "importance": "must_have", "shown_by": [{"role_number": 1, "bullet_number": 2}]}]
-    copy = focused.build_focused_resume(_reply(requirements=requirements), BASE, POSTING)
-    assert "Cut report run time by 30% by tuning PostgreSQL queries." in _bullets(copy, 1)
-    assert copy[focused.REPORT_KEY]["bullets_put_back_for_a_must_have"] == 1
+def _written(*numbers):
+    """A reply for role 1 of LONG that rewrote these bullets, one for one."""
+    return [{"role_number": 1, "bullets": [_bullet(f"Built service {n} in Python.", n) for n in numbers]}]
 
 
-def test_a_must_have_already_shown_adds_nothing():
-    requirements = [{"requirement": "FastAPI", "importance": "must_have", "shown_by": [{"role_number": 1, "bullet_number": 1}]}]
-    copy = focused.build_focused_resume(_reply(requirements=requirements), BASE, POSTING)
-    assert len(_bullets(copy, 1)) == 2
+def test_each_role_gets_five_then_four_then_three_bullets():
+    copy = focused.build_focused_resume(_reply(work_experience=[]), LONG, POSTING)
+    assert [len(role["bullets"]) for role in copy["experience"]] == [5, 4, 3, 3]
 
 
-def test_a_nice_to_have_does_not_bring_a_bullet_back():
-    requirements = [{"requirement": "POSTGRES", "importance": "nice_to_have", "shown_by": [{"role_number": 1, "bullet_number": 2}]}]
-    copy = focused.build_focused_resume(_reply(requirements=requirements), BASE, POSTING)
-    assert len(_bullets(copy, 1)) == 2
+def test_a_role_given_too_many_bullets_is_cut_to_its_number():
+    copy = focused.build_focused_resume(_reply(work_experience=_written(1, 2, 3, 4, 5, 6, 7)), LONG, POSTING)
+    assert len(_bullets(copy, 1)) == 5
+
+
+def test_a_role_given_too_few_bullets_is_filled_from_the_resume():
+    copy = focused.build_focused_resume(_reply(work_experience=_written(3)), LONG, POSTING)
+    assert len(_bullets(copy, 1)) == 5 and "Built service 3 in Python." in _bullets(copy, 1)
+
+
+def test_when_the_reply_wrote_too_many_the_one_that_shows_a_must_is_kept():
+    requirements = [{"name": "Redis", "kind": "must", "by": ["1.7"]}]
+    copy = focused.build_focused_resume(_reply(requirements=requirements, work_experience=_written(1, 2, 3, 4, 5, 6, 7)), LONG, POSTING)
+    assert "Built service 7 in Python." in _bullets(copy, 1) and "Built service 5 in Python." not in _bullets(copy, 1)
+
+
+def test_a_must_counts_for_more_than_a_duty_when_choosing():
+    requirements = [{"name": "Daily stand-ups with the team", "kind": "duty", "by": ["1.6"]}, {"name": "Redis", "kind": "must", "by": ["1.7"]}]
+    copy = focused.build_focused_resume(_reply(requirements=requirements, work_experience=_written(1, 2, 3, 4, 6, 7)), LONG, POSTING)
+    assert {"Built service 6 in Python.", "Built service 7 in Python."} <= set(_bullets(copy, 1))
+    assert "Built service 4 in Python." not in _bullets(copy, 1)
+
+
+def test_the_replys_own_bullets_are_not_traded_for_the_resumes_when_it_wrote_the_right_number():
+    copy = focused.build_focused_resume(_reply(work_experience=_written(4, 5, 6, 7, 8)), LONG, POSTING)
+    assert _bullets(copy, 1) == [f"Built service {n} in Python." for n in (4, 5, 6, 7, 8)]
+
+
+def test_the_bullets_kept_stay_in_the_order_they_stood_in():
+    requirements = [{"name": "Redis", "kind": "must", "by": ["1.7"]}]
+    copy = focused.build_focused_resume(_reply(requirements=requirements, work_experience=_written(1, 2, 3, 4, 5, 6, 7)), LONG, POSTING)
+    assert _bullets(copy, 1) == [f"Built service {n} in Python." for n in (1, 2, 3, 4, 7)]
+
+
+def test_a_bullet_with_a_measured_result_is_preferred_when_cutting():
+    roles = [{"role_number": 1, "bullets": [_bullet(f"Built service {n} in Python.", n) for n in range(1, 6)]
+              + [_bullet("Cut run time by 30% in Python.", 6)]}]
+    long = _long_with(6, "Cut run time by 30% with Python.")
+    copy = focused.build_focused_resume(_reply(work_experience=roles), long, POSTING)
+    assert "Cut run time by 30% in Python." in _bullets(copy, 1) and len(_bullets(copy, 1)) == 5
+
+
+def test_a_must_no_chosen_bullet_shows_is_swapped_in_as_the_resume_wrote_it():
+    long = _long_with(8, "Cached results in Redis.")
+    requirements = [{"name": "Redis", "kind": "must", "has": True, "by": []}]
+    copy = focused.build_focused_resume(_reply(requirements=requirements, work_experience=_written(1, 2, 3, 4, 5)), long, POSTING)
+    assert "Cached results in Redis." in _bullets(copy, 1) and len(_bullets(copy, 1)) == 5
+    assert copy[focused.REPORT_KEY]["bullets_swapped_in"] == 1
+
+
+def test_a_must_already_named_by_a_chosen_bullet_swaps_nothing():
+    requirements = [{"name": "Python", "kind": "must", "has": True, "by": []}]
+    copy = focused.build_focused_resume(_reply(requirements=requirements, work_experience=_written(1, 2, 3, 4, 5)), LONG, POSTING)
+    assert copy[focused.REPORT_KEY]["bullets_swapped_in"] == 0
+
+
+def test_a_must_the_resume_shows_nowhere_swaps_nothing():
+    requirements = [{"name": "Kubernetes", "kind": "must", "has": False, "by": []}]
+    copy = focused.build_focused_resume(_reply(requirements=requirements, work_experience=_written(1, 2, 3, 4, 5)), LONG, POSTING)
+    assert copy[focused.REPORT_KEY]["bullets_swapped_in"] == 0
 
 
 def test_a_pointer_at_a_bullet_the_resume_does_not_have_is_ignored():
-    requirements = [{"requirement": "Kubernetes", "importance": "must_have", "shown_by": [{"role_number": 9, "bullet_number": 1}]}]
+    requirements = [{"name": "Kubernetes", "kind": "must", "by": ["9.1"]}]
     copy = focused.build_focused_resume(_reply(requirements=requirements), BASE, POSTING)
     assert copy[focused.REPORT_KEY]["not_supported"] == ["Kubernetes"]
 
 
 def test_requirements_the_resume_does_not_show_are_reported_as_gaps():
-    requirements = [{"requirement": "Kubernetes", "importance": "must_have", "resume_has_it": False, "shown_by": []},
-                    {"requirement": "Daily standups", "importance": "duty", "resume_has_it": False, "shown_by": []}]
+    requirements = [{"name": "Kubernetes", "kind": "must", "has": False, "by": []},
+                    {"name": "Daily standups", "kind": "duty", "has": False, "by": []}]
     copy = focused.build_focused_resume(_reply(requirements=requirements), BASE, POSTING)
     assert copy[focused.REPORT_KEY]["not_supported"] == ["Kubernetes"]
 
 
 def test_a_requirement_the_resume_has_outside_its_bullets_is_not_a_gap():
-    requirements = [{"requirement": "Bachelor's degree", "importance": "must_have", "resume_has_it": True, "shown_by": []}]
+    requirements = [{"name": "Bachelor's degree", "kind": "must", "has": True, "by": []}]
     copy = focused.build_focused_resume(_reply(requirements=requirements), BASE, POSTING)
     assert copy[focused.REPORT_KEY]["not_supported"] == []
 
 
-def test_a_reply_that_is_not_an_object_gives_the_base_cut_to_its_first_bullets():
+def test_a_reply_that_is_not_an_object_gives_the_base_with_each_roles_first_bullets():
     copy = focused.build_focused_resume(None, BASE, POSTING)
     assert copy["summary"] == BASE["summary"]
     assert {label: value.lower() for label, value in copy["skills"].items()} == \
         {label: value.lower() for label, value in BASE["skills"].items()}
-    assert all(len(role["bullets"]) == focused.FEWEST_BULLETS_OF_A_ROLE for role in copy["experience"])
+    assert [role["bullets"] for role in copy["experience"]] == [role["bullets"] for role in BASE["experience"]]
 
 
 # ── The opening verb claims no more than the source ────────────────────────────
@@ -378,12 +445,13 @@ def test_the_complete_prompt_asks_for_the_other_bullets_and_the_focused_one_does
 # ── Keywords are spelled exactly as the posting spells them ────────────────────
 
 def _requirement(text, has_it=True):
-    return {"requirement": text, "importance": "must_have", "resume_has_it": has_it, "shown_by": []}
+    return {"name": text, "kind": "must", "has": has_it, "by": []}
 
 
 def test_keywords_are_taken_apart_and_kept_only_as_the_posting_writes_them():
-    requirements = [_requirement("POSTGRES, MSSQL"), _requirement("Test Driven Development"), _requirement("Docker Swarm"),
-                    _requirement("communication skills")]
+    reply = {"requirements": [_requirement("POSTGRES, MSSQL"), _requirement("Test Driven Development"), _requirement("Docker Swarm"),
+                              _requirement("communication skills")]}
+    requirements = focused.requirements_matched(reply, BASE["experience"])
     assert focused.keywords_of_the_posting(requirements, POSTING) == ["POSTGRES", "MSSQL", "Test Driven Development"]
 
 
@@ -392,8 +460,8 @@ def test_a_skill_the_resume_lists_is_a_keyword_when_the_posting_names_it_in_anot
 
 
 def test_a_duty_is_not_a_keyword():
-    duty = {"requirement": "MSSQL", "importance": "duty", "resume_has_it": True, "shown_by": []}
-    assert focused.keywords_of_the_posting([duty], POSTING) == []
+    duty = focused.requirements_matched({"requirements": [{"name": "MSSQL", "kind": "duty", "has": True, "by": []}]}, BASE["experience"])
+    assert focused.keywords_of_the_posting(duty, POSTING) == []
 
 
 def test_the_postings_name_is_added_beside_a_skill_printed_under_the_resumes_name():
@@ -431,3 +499,72 @@ def test_the_report_counts_each_keyword_in_the_skills_and_elsewhere():
     counted = {row["keyword"]: row for row in copy[focused.REPORT_KEY]["keywords"]}
     assert counted["FastAPI"]["in_skills"] and counted["FastAPI"]["elsewhere"] >= 1
     assert not counted["Kubernetes"]["in_skills"] and counted["Kubernetes"]["elsewhere"] == 0
+
+
+# ── Checks that used to refuse too much ────────────────────────────────────────
+
+def test_a_keyword_phrase_is_supported_when_the_role_writes_it_with_another_ending():
+    base = {**BASE, "experience": [{**BASE["experience"][0], "bullets": ["Built RESTful APIs with Python and FastAPI.", "Followed TDD."]}]}
+    roles = [{"role_number": 1, "bullets": [_bullet("Built REST APIs with Python and FastAPI.", 1), _bullet("Followed TDD.", 2)]}]
+    base["skills"] = {**BASE["skills"], "Web": "REST APIs"}
+    copy = focused.build_focused_resume(_reply(work_experience=roles), base, POSTING)
+    assert _bullets(copy, 1)[0] == "Built REST APIs with Python and FastAPI."
+
+
+def test_a_short_plain_word_is_not_taken_for_a_skills_initials():
+    assert "as" not in focused._names_in("Built APIs as a service", {"as", "apis"})
+
+
+def test_one_unsupported_item_is_taken_out_of_a_summary_list_and_the_sentence_stays():
+    summary = "Backend developer with 7+ years of experience. Works in Python, Kubernetes, and SQL Server."
+    copy = focused.build_focused_resume(_reply(professional_summary=summary), BASE, POSTING)
+    assert copy["summary"] == "Backend developer with 7+ years of experience. Works in Python, and SQL Server."
+
+
+def test_a_summary_sentence_that_is_not_a_list_is_still_left_out_whole():
+    summary = "Backend developer with 7+ years of experience. Expert in Kubernetes platforms."
+    copy = focused.build_focused_resume(_reply(professional_summary=summary), BASE, POSTING)
+    assert copy["summary"] == "Backend developer with 7+ years of experience."
+
+
+def test_a_bullet_that_shows_a_requirement_is_written_as_role_dot_bullet():
+    matched = focused.requirements_matched({"requirements": [{"name": "POSTGRES", "kind": "must", "has": True, "by": ["1.2", "9.1", "x"]}]},
+                                           BASE["experience"])
+    assert matched == [{"requirement": "POSTGRES", "importance": "must", "shown_by": [(1, 2)], "resume_has_it": True}]
+
+
+def test_a_bullet_that_names_a_must_is_credited_with_it_without_a_pointer():
+    requirements = [{"name": "FastAPI", "kind": "must", "by": []}]
+    roles = [{"role_number": 1, "bullets": [_bullet(f"Built service {n} in Python.", n) for n in range(1, 6)]
+              + [_bullet("Built service 6 with Python and FastAPI.", 6)]}]
+    copy = focused.build_focused_resume(_reply(requirements=requirements, work_experience=roles), _long_with(6, "Built service 6 with Python and FastAPI."), POSTING)
+    assert "Built service 6 with Python and FastAPI." in _bullets(copy, 1) and len(_bullets(copy, 1)) == 5
+
+
+def test_a_phrase_is_supported_when_the_bullets_own_sources_state_each_of_its_words():
+    assert focused._every_word_is_stated_in("REST APIs", "Built RESTful services and public APIs.")
+    assert not focused._every_word_is_stated_in("Spring Security", "Built Spring Boot services.")
+
+
+def test_a_swap_is_made_only_when_the_copy_then_shows_more():
+    long = _long_with(8, "Cached results in Redis.")
+    requirements = [{"name": "Redis", "kind": "must", "has": True, "by": []}]
+    roles = [{"role_number": 1, "bullets": [_bullet(f"Built service {n} in Python.", n) for n in range(1, 5)] + [_bullet("Cached results in Redis.", 8)]}]
+    copy = focused.build_focused_resume(_reply(requirements=requirements, work_experience=roles), long, POSTING)
+    assert copy[focused.REPORT_KEY]["bullets_swapped_in"] == 0
+
+
+def test_a_roles_opening_bullets_are_never_swapped_out():
+    long = _long_with(8, "Cached results in Redis.")
+    requirements = [{"name": "Redis", "kind": "must", "has": True, "by": []}]
+    copy = focused.build_focused_resume(_reply(requirements=requirements, work_experience=_written(1, 2, 3, 4, 5)), long, POSTING)
+    assert _bullets(copy, 1)[:2] == ["Built service 1 in Python.", "Built service 2 in Python."]
+
+
+def test_no_more_than_the_allowed_number_of_bullets_is_swapped_in_a_role():
+    first = LONG["experience"][0]
+    bullets = first["bullets"][:5] + ["Used Redis.", "Used Kafka.", "Used Docker."]
+    long = {**LONG, "experience": [{**first, "bullets": bullets}] + LONG["experience"][1:]}
+    requirements = [{"name": name, "kind": "must", "has": True, "by": []} for name in ("Redis", "Kafka", "Docker")]
+    copy = focused.build_focused_resume(_reply(requirements=requirements, work_experience=_written(1, 2, 3, 4, 5)), long, POSTING)
+    assert copy[focused.REPORT_KEY]["bullets_swapped_in"] == focused.MOST_SWAPS_IN_A_ROLE

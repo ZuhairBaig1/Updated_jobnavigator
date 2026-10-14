@@ -38,7 +38,7 @@ async def test_dispatch_concatenates_prefix_for_codex_cli(monkeypatch):
     """codex_cli receives cached_prefix + prompt combined."""
     captured = {}
 
-    async def fake_codex_cli(prompt, system, model, max_tokens, response_schema=None):
+    async def fake_codex_cli(prompt, system, model, max_tokens, response_schema=None, reasoning=None):
         captured["prompt"] = prompt
         return {"text": "ok", "usage": {"input_tokens": 1, "output_tokens": 1,
                                             "cache_read_tokens": 0, "cache_write_tokens": 0}}
@@ -260,7 +260,7 @@ async def test_codex_gets_the_schema_to_enforce_not_to_read(monkeypatch):
     """
     seen = {}
 
-    async def fake_codex(prompt, system, model, max_tokens, response_schema=None):
+    async def fake_codex(prompt, system, model, max_tokens, response_schema=None, reasoning=None):
         seen["prompt"], seen["schema"] = prompt, response_schema
         return {"text": "{}", "usage": {"input_tokens": 0, "output_tokens": 0,
                                         "cache_read_tokens": 0, "cache_write_tokens": 0}}

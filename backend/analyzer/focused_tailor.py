@@ -26,15 +26,18 @@ FOCUSED, COMPLETE = "focused", "complete"
 FOCUSED_SCHEMA_NAME, COMPLETE_SCHEMA_NAME = "focused_resume", "complete_resume"
 REPORT_KEY = "_focused_report"
 
-FEWEST_BULLETS_IN_ALL, MOST_BULLETS_IN_ALL = 16, 20
-FEWEST_BULLETS_OF_A_ROLE = 2
-MOST_WORDS_IN_A_BULLET = 32
+# How many bullets a focused copy gives each role, most recent first: five, then four, then three for every earlier one.
+BULLETS_OF_THE_LATEST_ROLES = (5, 4)
+BULLETS_OF_AN_EARLIER_ROLE = 3
+# What showing a requirement is worth when choosing between bullets.
+WORTH_OF_SHOWING = {"must": 3, "nice": 2, "duty": 1}
+MOST_WORDS_IN_A_BULLET = 38
 MOST_GAPS_REPORTED = 12
 
 _INT = {"type": "integer"}
 _BULLET = rs._obj({"text": rs._STR, "from_bullets": {"type": "array", "items": _INT}})
 # How much the posting wants a thing: it requires it, would like it, or lists it as part of the work.
-MUST_HAVE, NICE_TO_HAVE, DUTY = "must_have", "nice_to_have", "duty"
+MUST_HAVE, NICE_TO_HAVE, DUTY = "must", "nice", "duty"
 
 _NUMBERS = {"type": "array", "items": _INT}
 
@@ -47,10 +50,12 @@ def _schema_of_the_reply(keeps_everything: bool) -> dict:
         rs.TARGET_JOB_TITLE: rs._STR,
         # Neither has a shape code can recognise in a contact line, so the reply points at each (see rs._tailored_header).
         "header": rs._obj({"location": rs._STR, "work_authorization": rs._STR}),
-        "requirements": rs._arr({"requirement": rs._STR,
-                                 "importance": {"type": "string", "enum": [MUST_HAVE, NICE_TO_HAVE, DUTY]},
-                                 "resume_has_it": rs._BOOL,
-                                 "shown_by": rs._arr({"role_number": _INT, "bullet_number": _INT})}),
+        # The matching is two fifths of what the model writes, and writing is where the time goes, so each entry
+        # is kept short: its name, its kind, whether the résumé has it, and the bullets that show it as "role.bullet".
+        "requirements": rs._arr({"name": rs._STR,
+                                 "kind": {"type": "string", "enum": [MUST_HAVE, NICE_TO_HAVE, DUTY]},
+                                 "has": rs._BOOL,
+                                 "by": rs._STR_LIST}),
         "same_thing_other_name": rs._arr({"posting_name": rs._STR, "resume_name": rs._STR}),
         "professional_summary": rs._STR,
         "technical_skills": rs._arr({"category": rs._STR, "skills": rs._STR}),
@@ -81,10 +86,10 @@ STEP 1 - READ THE POSTING AND THE CONTACT LINE
 - Note what it requires (must-haves), what it prefers (nice-to-haves), the duties, and the exact spelling it uses for each skill.
 
 STEP 2 - MATCH THE RESUME TO IT
-- List in requirements every skill, tool, qualification and duty the posting names, one per entry, in the posting's words (six words at most), each marked must_have, nice_to_have or duty. One entry per skill: "Python, Pandas, and FastAPI" is three entries.
-- For each, say in resume_has_it whether the resume has it anywhere: a bullet, the skills, the summary, the education or the dates.
-- For each, give in shown_by the one to three bullets of the resume that show it best. Leave shown_by empty when no bullet shows it.
-- A requirement with an empty shown_by never appears in a bullet you write.
+- List in requirements every skill, tool, qualification and duty the posting names, one per entry. name is it in the posting's words (six words at most); kind is must (required), nice (preferred) or duty. One entry per skill: "Python, Pandas, and FastAPI" is three entries.
+- has says whether the resume has it anywhere: a bullet, the skills, the summary, the education or the dates.
+- by gives the one or two bullets of the resume that show it best, each written as role number, a dot, bullet number: "2.5" is bullet 5 of role 2. Leave by empty when no bullet shows it.
+- A requirement with an empty by never appears in a bullet you write.
 - When the posting and the resume name the SAME thing differently, list the pair in same_thing_other_name and use the posting's name ("MSSQL" for "SQL Server").
 - A narrower or different thing is NOT the same thing: "GitHub" is not "GitHub Actions", "Kubernetes" is not "AKS", "JavaScript" is not "JavaScript ES6+". If unsure, treat the two as different.
 
@@ -121,20 +126,20 @@ RESUME
 
 
 _STEP_3_OF_A_FOCUSED_COPY = """STEP 3 - CHOOSE WHAT STAYS
-- The result fits on two pages: {fewest} to {most} bullets in all.
-- Every role stays, each with at least {fewest_of_a_role} bullets. The most recent role gets the most (5 or 6), older roles fewer (2 to 4).
-- Keep the bullets that show a requirement or duty of THIS posting. Prefer one that states a number. Drop every bullet that serves nothing the posting asks for, however impressive.
-- Every must_have with a shown_by is shown by at least one bullet you keep, and named in it in the posting's wording. Check each one before you finish.
-- Merge two or three bullets of the same role into one to show more of what the posting asks for in fewer lines.
+- Every role stays. Role 1, the most recent, gets exactly {latest} bullets, role 2 exactly {second}, and every role after that exactly {earlier}. A role the resume gives fewer bullets than that keeps all it has.
+- These are the role's most important points for THIS posting: together they show as many of the posting's requirements and duties as the role truthfully can, the musts first. Prefer a point that states a number.
+- To fit more into so few bullets, write each one from two or three bullets of the role that belong together. Drop what serves nothing the posting asks for, however impressive.
+- The posting's duties count as much as its tools. Where a role shows the working practices the posting lists (reviews, team ceremonies, troubleshooting, documentation, working with other teams), one of its bullets gathers them, in the posting's wording.
+- Every must whose by is not empty is shown by at least one bullet you keep, and named in it in the posting's wording. Check each one before you finish.
 - When the resume lacks a must-have but shows a close relative of it (another framework of the same kind), keep the bullet that shows the relative, under its own name. Never rename it.
 - Order each role's bullets by how much they matter to this posting. The first bullets of the most recent role are read most: they show the posting's top must-haves.
 - Keep a project or a certification only when it shows something the posting asks for."""
 
 _STEP_3_OF_A_COMPLETE_COPY = """STEP 3 - ARRANGE THE RESUME AROUND THE POSTING, DROPPING NOTHING
 - Every bullet of every role and project stays in the resume. You decide which are rewritten and the order of all of them.
-- Lean the whole resume towards what the posting wants: rewrite (step 4) every bullet the posting's keywords or wording can honestly apply to. Every bullet you named in a shown_by is one of them. Only a bullet with nothing in common with the posting stays as written.
+- Lean the whole resume towards what the posting wants: rewrite (step 4) every bullet the posting's keywords or wording can honestly apply to. Every bullet you named in a by is one of them. Only a bullet with nothing in common with the posting stays as written.
 - In each role the rewritten bullets go first, the one that matters most to the posting at the top.
-- Every must_have with a shown_by is shown by a rewritten bullet, and named in it in the posting's wording. Check each one before you finish.
+- Every must whose by is not empty is shown by a rewritten bullet, and named in it in the posting's wording. Check each one before you finish.
 - The first bullets of the most recent role are read most: they show the posting's top must-haves.
 - Bullets of the same role that say nearly the same thing may become one rewritten bullet: give all their numbers in from_bullets.
 - When the resume lacks a must-have but shows a close relative of it (another framework of the same kind), rewrite the bullet that shows the relative, under its own name. Never rename it.
@@ -178,8 +183,8 @@ def focused_prompt(base: dict, jd_text: str, keeps_everything: bool = False) -> 
     prompt = (_PROMPT.replace("{step_3}", _STEP_3_OF_A_COMPLETE_COPY if keeps_everything else _STEP_3_OF_A_FOCUSED_COPY)
               .replace("{bullets_also}", _BULLETS_OF_A_COMPLETE_COPY if keeps_everything else "")
               .replace("{skills_also}", _SKILLS_OF_A_COMPLETE_COPY if keeps_everything else _SKILLS_OF_A_FOCUSED_COPY))
-    return (prompt.replace("{fewest}", str(FEWEST_BULLETS_IN_ALL)).replace("{most}", str(MOST_BULLETS_IN_ALL))
-            .replace("{fewest_of_a_role}", str(FEWEST_BULLETS_OF_A_ROLE))
+    return (prompt.replace("{latest}", str(BULLETS_OF_THE_LATEST_ROLES[0])).replace("{second}", str(BULLETS_OF_THE_LATEST_ROLES[1]))
+            .replace("{earlier}", str(BULLETS_OF_AN_EARLIER_ROLE))
             .replace("{most_words}", str(MOST_WORDS_IN_A_BULLET))
             .replace("{resume}", resume_as_numbered_text(base))
             .replace("{posting}", fence(jd_text, "JOB POSTING")))
@@ -210,7 +215,8 @@ def _names_in(sentence: str, vocabulary: set) -> set:
     names = {match for pattern in rs._CLAIM_RES for match in pattern.findall(sentence or "")}
     words = _WORD.findall(sentence or "")
     names |= {word for word in words[1:] if word[0].isupper()}
-    names |= rs._named_tech(sentence, vocabulary)
+    # A short lower-case word is prose, even when it happens to be the initials of a skill ("as" for "App Services").
+    names |= {name for name in rs._named_tech(sentence, vocabulary) if not (name.islower() and name.isalpha() and len(name) <= 3)}
     names = {name.strip(".,;:") for name in names}
     return {name for name in names if len(rs._squash(name)) >= 2}
 
@@ -283,9 +289,18 @@ def other_names_allowed(reply: dict, base_text: str, jd_text: str) -> dict:
     return allowed
 
 
+def _is_stated_with_other_endings(phrase: str, text: str) -> bool:
+    """Whether `text` states a phrase of several words allowing each word another ending: "REST APIs" where it says "RESTful APIs"."""
+    words = _WORD.findall(phrase or "")
+    if len(words) < 2:
+        return False
+    stems = [re.escape(word.rstrip("s") if len(word) > 3 else word) + r"\w*" for word in words]
+    return re.search(r"(?<![A-Za-z0-9])" + r"[\s/\-]+".join(stems), text or "", re.IGNORECASE) is not None
+
+
 def _is_supported(name: str, text: str, other_names: dict) -> bool:
     """Whether `text` states this name, under it or under the résumé's own name for the same thing."""
-    if _is_stated(name, text) or _is_spelled_out_in(name, text):
+    if _is_stated(name, text) or _is_spelled_out_in(name, text) or _is_stated_with_other_endings(name, text):
         return True
     initials = "".join(word[0] for word in _WORD.findall(name)) if len(_WORD.findall(name)) >= 2 else ""
     if len(initials) >= 2 and re.search(r"(?<![A-Za-z0-9])" + re.escape(initials) + r"(?![A-Za-z0-9])", text or "", re.IGNORECASE):
@@ -395,6 +410,19 @@ def with_the_verb_its_sources_use(text: str, sources: list) -> str:
     return f"{source_words[0].strip(',')} {words[1]}"
 
 
+def _every_word_is_stated_in(phrase: str, sources: str) -> bool:
+    """Whether the bullets a sentence was written from state every word of a phrase, each allowed another ending.
+
+    "REST APIs" is nothing new in a bullet written from "Built RESTful services and public APIs". Only the bullet's
+    own sources count, not the whole role, so two words from unrelated bullets cannot add up to a product name.
+    """
+    words = _WORD.findall(phrase or "")
+    if len(words) < 2:
+        return False
+    stem = lambda word: re.escape(word.rstrip("s") if len(word) > 3 else word)
+    return all(re.search(r"(?<![A-Za-z0-9])" + stem(word) + r"\w*", sources or "", re.IGNORECASE) for word in words)
+
+
 def _numbers_of_its_sources(bullet: dict, base_bullets: list) -> list:
     """The numbers of the base bullets a reply bullet says it was written from, in order."""
     numbers = bullet.get("from_bullets") if isinstance(bullet.get("from_bullets"), list) else []
@@ -419,6 +447,8 @@ def focused_bullets(reply_bullets: list, base_bullets: list, allowed_text: str, 
         if not text or not sources:
             continue
         too_much = unsupported_in(text, allowed_text, vocabulary, other_names, prose=" ".join(base_bullets))
+        its_sources = " ".join(base_bullets[n - 1] for n in sources)
+        too_much = [name for name in too_much if not _every_word_is_stated_in(name, its_sources)]
         if too_much:
             logger.warning("Focused tailor: a bullet stated %s, which its role does not — keeping the résumé's own sentence",
                            ", ".join(too_much[:6]))
@@ -429,14 +459,109 @@ def focused_bullets(reply_bullets: list, base_bullets: list, allowed_text: str, 
     return kept
 
 
-def _with_the_fewest(bullets: list, base_bullets: list) -> list:
-    """The chosen bullets, topped up from the résumé's own when a role was left with too few."""
-    for number, text in enumerate(base_bullets, start=1):
-        if len(bullets) >= min(FEWEST_BULLETS_OF_A_ROLE, len(base_bullets)):
-            break
-        if not any(number in b["from"] for b in bullets):
-            bullets = bullets + [{"text": text, "from": [number], "as_written": True}]
-    return bullets
+def _names_the_requirement(text: str, requirement: str) -> bool:
+    """Whether a bullet names a requirement short enough to be a keyword, however it spells it."""
+    if not requirement or len(requirement.split()) > MOST_WORDS_IN_A_KEYWORD or len(rs._squash(requirement)) < 2:
+        return False
+    return _however_it_is_spelled(requirement).search(text or "") is not None
+
+
+def bullets_a_role_gets(role_number: int) -> int:
+    """How many bullets a focused copy gives a role; role 1 is the most recent."""
+    latest = BULLETS_OF_THE_LATEST_ROLES
+    return latest[role_number - 1] if role_number <= len(latest) else BULLETS_OF_AN_EARLIER_ROLE
+
+
+_A_MEASURED_RESULT = re.compile(r"\d+(?:\.\d+)?\s*%|[$€£]\s?\d|\b\d+(?:\.\d+)?x\b")
+WORTH_OF_A_MEASURED_RESULT = 2
+
+
+def _shown_by(bullet: dict, role_number: int, requirements: list) -> set:
+    """The requirements a bullet shows: the ones it names, and the ones the reply matched to a bullet it was written from."""
+    return {at for at, requirement in enumerate(requirements)
+            if _names_the_requirement(bullet["text"], requirement["requirement"])
+            or any(role == role_number and number in bullet["from"] for role, number in requirement["shown_by"])}
+
+
+def _worth(requirement_numbers, requirements: list) -> int:
+    return sum(WORTH_OF_SHOWING.get(requirements[at]["importance"], 0) for at in requirement_numbers)
+
+
+def the_most_important(bullets: list, base_bullets: list, how_many: int, role_number: int, requirements: list) -> list:
+    """Exactly `how_many` bullets for a role, fewer only when the résumé gives it fewer.
+
+    The reply's own bullets come first: it chose and ordered them for the posting. When it wrote too many, the
+    ones kept are picked one at a time, each the bullet that shows the most requirements no picked bullet shows
+    yet (a must counting for more than a nice-to-have, that for more than a duty, and a measured result for
+    something too). When it wrote too few, the role's own bullets fill the gap the same way, as written.
+    Picked bullets print in the order they stood in.
+    """
+    covered = {number for bullet in bullets for number in bullet["from"]}
+    of_the_resume = [{"text": text, "from": [number], "as_written": True}
+                     for number, text in enumerate(base_bullets, start=1)
+                     if number not in covered and text not in [b["text"] for b in bullets]]
+    candidates = bullets + (of_the_resume if len(bullets) < how_many else [])
+    always_kept = list(range(len(bullets))) if len(bullets) <= how_many else []
+    picked = list(always_kept)
+    already_shown = set().union(*[_shown_by(candidates[at], role_number, requirements) for at in picked]) if picked else set()
+
+    def gain(at):
+        result = WORTH_OF_A_MEASURED_RESULT if _A_MEASURED_RESULT.search(candidates[at]["text"]) else 0
+        return _worth(_shown_by(candidates[at], role_number, requirements) - already_shown, requirements) + result
+
+    while len(picked) < min(how_many, len(candidates)):
+        best = max((at for at in range(len(candidates)) if at not in picked), key=lambda at: (gain(at), -at))
+        picked.append(best)
+        already_shown |= _shown_by(candidates[best], role_number, requirements)
+    return [candidates[at] for at in sorted(picked)]
+
+
+MOST_SWAPS_IN_A_ROLE = 1
+# A role's opening bullets are the ones read, and the reply put its strongest there, so a swap never takes their place.
+BULLETS_NEVER_SWAPPED_OUT = 2
+
+
+def _what_the_copy_shows(bullets_of_each_role: list, requirements: list) -> int:
+    """What the chosen bullets are worth together: every requirement any of them shows, counted once, and a measured result if one is stated."""
+    shown = set()
+    for role_number, bullets in enumerate(bullets_of_each_role, start=1):
+        for bullet in bullets:
+            shown |= _shown_by(bullet, role_number, requirements)
+    states_a_result = any(_A_MEASURED_RESULT.search(bullet["text"]) for bullets in bullets_of_each_role for bullet in bullets)
+    return _worth(shown, requirements) + (WORTH_OF_A_MEASURED_RESULT if states_a_result else 0)
+
+
+def improved_by_swaps(bullets_of_each_role: list, roles: list, requirements: list) -> int:
+    """Trades a chosen bullet for one of the résumé's own wherever that makes the copy show more of the posting.
+
+    The reply's choice stands unless a swap strictly adds to what the whole copy shows: a must, a nice-to-have
+    or a duty that no chosen bullet showed. At most one swap a role, and never of a role's opening bullets, so
+    the copy stays the reply's own selection. A bullet swapped in prints as the résumé wrote it.
+    Changes bullets_of_each_role in place and returns how many bullets it swapped.
+    """
+    swapped = 0
+    for role_number, role in enumerate(roles, start=1):
+        chosen = bullets_of_each_role[role_number - 1]
+        base_bullets = [b for b in role.get("bullets") or [] if isinstance(b, str)]
+        for _ in range(MOST_SWAPS_IN_A_ROLE):
+            now = _what_the_copy_shows(bullets_of_each_role, requirements)
+            used = {number for bullet in chosen for number in bullet["from"]}
+            best_gain, best_swap = 0, None
+            for number, text in enumerate(base_bullets, start=1):
+                if number in used or text in [bullet["text"] for bullet in chosen]:
+                    continue
+                candidate = {"text": text, "from": [number], "as_written": True}
+                for at in range(BULLETS_NEVER_SWAPPED_OUT, len(chosen)):
+                    was, chosen[at] = chosen[at], candidate
+                    gain = _what_the_copy_shows(bullets_of_each_role, requirements) - now
+                    chosen[at] = was
+                    if gain > best_gain:
+                        best_gain, best_swap = gain, (at, candidate)
+            if not best_swap:
+                break
+            chosen[best_swap[0]] = best_swap[1]
+            swapped += 1
+    return swapped
 
 
 def _with_all_the_rest(bullets: list, order_asked_for, base_bullets: list) -> list:
@@ -457,47 +582,51 @@ def _with_all_the_rest(bullets: list, order_asked_for, base_bullets: list) -> li
 
 # ── What the posting asks for, and where the résumé shows it ───────────────────
 
+_ROLE_DOT_BULLET = re.compile(r"^\s*(\d+)\s*\.\s*(\d+)\s*$")
+
+
 def requirements_matched(reply: dict, roles: list) -> list:
     """The reply's matching of the posting to the résumé: {"requirement", "importance", "resume_has_it", "shown_by": [(role number, bullet number)]}.
 
+    The reply writes each entry shortly, as {"name", "kind", "has", "by": ["role.bullet"]}; this gives the parts their full names.
     A pointer at a role or bullet the résumé does not have is dropped.
     """
     matched = []
     for entry in (reply or {}).get("requirements") or []:
-        if not isinstance(entry, dict) or not rs._text(entry.get("requirement")):
+        if not isinstance(entry, dict) or not rs._text(entry.get("name")):
             continue
         shown_by = []
-        for pointer in entry.get("shown_by") or []:
-            role, bullet = (pointer or {}).get("role_number"), (pointer or {}).get("bullet_number")
-            if (isinstance(role, int) and isinstance(bullet, int) and 1 <= role <= len(roles)
-                    and 1 <= bullet <= len(roles[role - 1].get("bullets") or [])):
+        for pointer in entry.get("by") or []:
+            written = _ROLE_DOT_BULLET.match(str(pointer))
+            role, bullet = (int(written.group(1)), int(written.group(2))) if written else (0, 0)
+            if 1 <= role <= len(roles) and 1 <= bullet <= len(roles[role - 1].get("bullets") or []):
                 shown_by.append((role, bullet))
-        matched.append({"requirement": rs._text(entry["requirement"]), "importance": entry.get("importance"),
-                        "shown_by": shown_by, "resume_has_it": bool(entry.get("resume_has_it")) or bool(shown_by)})
+        matched.append({"requirement": rs._text(entry["name"]), "importance": entry.get("kind"),
+                        "shown_by": shown_by, "resume_has_it": bool(entry.get("has")) or bool(shown_by)})
     return matched
 
 
-def with_every_must_have_shown(bullets_of_each_role: list, requirements: list, roles: list) -> int:
-    """Puts back, as the résumé wrote it, the best bullet for any must-have the chosen bullets no longer show.
-
-    A must-have counts as shown when a kept bullet was written from one of the bullets that show it.
-    Changes bullets_of_each_role in place and returns how many bullets it put back.
-    """
-    put_back = 0
-    for requirement in requirements:
-        if requirement["importance"] != MUST_HAVE or not requirement["shown_by"]:
-            continue
-        if any(bullet_number in kept["from"] for role_number, bullet_number in requirement["shown_by"]
-               for kept in bullets_of_each_role[role_number - 1]):
-            continue
-        role_number, bullet_number = requirement["shown_by"][0]
-        text = roles[role_number - 1]["bullets"][bullet_number - 1]
-        bullets_of_each_role[role_number - 1].append({"text": text, "from": [bullet_number], "as_written": True})
-        put_back += 1
-    return put_back
-
-
 # ── Summary and skills ─────────────────────────────────────────────────────────
+
+FEWEST_ITEMS_IN_A_LIST = 3
+
+
+def _without_the_list_items_naming(sentence: str, names: list) -> str:
+    """A sentence that lists things, without the items that name any of `names`; "" when it is not such a list.
+
+    "Skilled in Java, NoSQL, and Kafka." without NoSQL is "Skilled in Java, and Kafka."
+    """
+    items = re.split(r",\s*", sentence.rstrip())
+    if len(items) < FEWEST_ITEMS_IN_A_LIST:
+        return ""
+    kept = [item for item in items if not any(_is_stated(name, item) for name in names)]
+    if len(kept) < 2 or len(kept) == len(items) or kept[0] != items[0]:
+        return ""   # nothing to take out, too little left, or the opening of the sentence itself is the trouble
+    if kept[-1] != items[-1]:
+        last = kept[-1].rstrip(".")
+        kept[-1] = (last if last.startswith("and ") else f"and {last}") + "."
+    return ", ".join(kept)
+
 
 def focused_summary(reply: dict, base: dict, base_text: str, vocabulary: set, other_names: dict) -> str:
     """The summary written for the posting, without any sentence that states what the résumé does not."""
@@ -509,6 +638,13 @@ def focused_summary(reply: dict, base: dict, base_text: str, vocabulary: set, ot
     for sentence in sentences:
         too_much = unsupported_in(sentence, base_text, vocabulary, other_names, prose=prose)
         if too_much:
+            # One unsupported item in a list should cost that item, not the whole sentence and its keywords.
+            shorter = _without_the_list_items_naming(sentence, too_much)
+            if shorter and not unsupported_in(shorter, base_text, vocabulary, other_names, prose=prose):
+                logger.warning("Focused tailor: the summary listed %s, which the résumé does not — taken out of the list",
+                               ", ".join(too_much[:6]))
+                kept.append(shorter)
+                continue
             logger.warning("Focused tailor: a summary sentence stated %s, which the résumé does not — left out",
                            ", ".join(too_much[:6]))
         else:
@@ -625,6 +761,7 @@ def build_focused_resume(reply: dict, base: dict, jd_text: str = "", title_of_th
     vocabulary = rs._resume_vocabulary(base)
     other_names = other_names_allowed(reply, base_text, jd_text)
     roles = _roles(base)
+    requirements = requirements_matched(reply, roles)
     chosen_roles = _by_number(reply.get("work_experience"), "role_number")
     bullets_of_each_role = []
     for number, role in enumerate(roles, start=1):
@@ -632,10 +769,12 @@ def build_focused_resume(reply: dict, base: dict, jd_text: str = "", title_of_th
         allowed_text = json.dumps({**role, "bullets": base_bullets}, ensure_ascii=False)
         of_this_role = chosen_roles.get(number) or {}
         chosen = focused_bullets(of_this_role.get("bullets"), base_bullets, allowed_text, vocabulary, other_names)
-        bullets_of_each_role.append(_with_all_the_rest(chosen, of_this_role.get("other_bullets"), base_bullets)
-                                    if keeps_everything else _with_the_fewest(chosen, base_bullets))
-    requirements = requirements_matched(reply, roles)
-    put_back = 0 if keeps_everything else with_every_must_have_shown(bullets_of_each_role, requirements, roles)
+        bullets_of_each_role.append(_with_all_the_rest(chosen, of_this_role.get("other_bullets"), base_bullets) if keeps_everything
+                                    else the_most_important(chosen, base_bullets, bullets_a_role_gets(number), number, requirements))
+
+    summary = focused_summary(reply, base, base_text, vocabulary, other_names)
+    skills = (complete_skills if keeps_everything else focused_skills)(reply, base, base_text, other_names, jd_text)
+    swapped_in = 0 if keeps_everything else improved_by_swaps(bullets_of_each_role, roles, requirements)
 
     experience = []
     for role, bullets in zip(roles, bullets_of_each_role):
@@ -685,8 +824,8 @@ def build_focused_resume(reply: dict, base: dict, jd_text: str = "", title_of_th
             if r["importance"] in (MUST_HAVE, NICE_TO_HAVE) and not r["resume_has_it"]][:MOST_GAPS_REPORTED]
     copy = {
         "header": header,
-        "summary": focused_summary(reply, base, base_text, vocabulary, other_names),
-        "skills": (complete_skills if keeps_everything else focused_skills)(reply, base, base_text, other_names, jd_text),
+        "summary": summary,
+        "skills": skills,
         "experience": experience,
         "projects": projects,
         "education": education,
@@ -698,7 +837,7 @@ def build_focused_resume(reply: dict, base: dict, jd_text: str = "", title_of_th
     _respell_the_keywords(copy, keywords)
     copy["skills"] = with_the_postings_name_beside_the_resumes(copy["skills"], other_names)
     copy[REPORT_KEY] = {"not_supported": gaps, "other_names": other_names, "bullets_kept_as_written": kept_as_written,
-                        "bullets_put_back_for_a_must_have": put_back,
+                        "bullets_swapped_in": swapped_in,
                         "bullets": sum(len(r["bullets"]) for r in experience),
                         "bullets_in_the_original": sum(len(r.get("bullets") or []) for r in _roles(base)),
                         "keywords": keywords_counted(copy, keywords)}

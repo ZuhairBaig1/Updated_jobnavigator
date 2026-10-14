@@ -210,3 +210,14 @@ async def test_codex_is_told_the_effort_named_with_the_model(monkeypatch):
 async def test_codex_is_told_no_effort_when_none_is_named(monkeypatch):
     args = await _codex_command_for(monkeypatch, "gpt-6-luna")
     assert not any("model_reasoning_effort" in str(part) for part in args)
+
+
+@pytest.mark.asyncio
+async def test_a_caller_that_asks_for_no_extra_thinking_gets_the_models_own_effort(monkeypatch):
+    events = [{"type": "item.completed", "item": {"type": "agent_message", "text": "ok"}},
+              {"type": "turn.completed", "usage": {"input_tokens": 1, "output_tokens": 1}}]
+    calls = _install(monkeypatch, FakeProcess(stdout=_jsonl(events)))
+    await llm_client._call_codex_cli("prompt", "system", "gpt-6-luna:high", 100, reasoning=False)
+    args = calls[1][0]
+    assert args[args.index("--model") + 1] == "gpt-6-luna"
+    assert not any("model_reasoning_effort" in str(part) for part in args)

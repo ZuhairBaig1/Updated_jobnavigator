@@ -413,7 +413,6 @@ with st.sidebar:
                        label_visibility="collapsed",
                        help="Switches both résumé import and tailoring. Saved in the backend, "
                             "so the React frontend follows too.")
-    st.caption(api.ENGINES[_choice]["help"])
     if not _current:
         st.warning("The backend is on none of these presets. Picking one below will set both jobs.",
                    icon="⚠️")

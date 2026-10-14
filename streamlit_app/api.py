@@ -96,13 +96,13 @@ TAILORING_WAYS = {
         "mode": "complete",
         "help": "Tailors as hard as Focused: the posting's title on top, the bullets that serve the posting reworded in "
                 "its words and moved to the top of each role, the skills it asks for first. Every other bullet and "
-                "skill stays below, as you wrote it. Nothing is added that the original does not say.",
+                "skill stays below, as you wrote it.",
     },
     "Focused — two pages, only what this job asks for": {
         "mode": "focused",
         "help": "Rebuilds a short résumé for this one posting: the posting's title on top, five bullets for your latest "
                 "role, four for the one before and three for each earlier one, reworded in the posting's own words. "
-                "Every role stays. Nothing is added that the original does not say.",
+                "Every role stays.",
     },
 }
 

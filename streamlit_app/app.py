@@ -323,8 +323,51 @@ def _show_rubric_score(score: dict):
                    "These are what the model was sent and wrote in full, with anything the route adds and all thinking.")
 
 
+EVIDENCE_WORDS = {"result": "Shown, with a result", "shown": "Shown in a role", "partly": "Partly shown",
+                  "listed": "Only listed", "none": "Not in the résumé"}
+WORDING_WORDS = {"exact": "Posting's term", "other": "Another name", "none": "Not named"}
+KIND_WORDS = {"must": "Must-have", "duty": "Duty", "nice": "Nice to have"}
+
+
+def _show_category_score(score: dict):
+    """Version 3: the score, the overall categories, and every requirement with the category it was given."""
+    total, occupation, musts, wording = st.columns(4)
+    total.metric("ATS score", f"{score['ats_score']} / 100")
+    occupation.metric("Same occupation", f"{100 * score['same_occupation']:.0f}%")
+    must_share = score.get("must_have_share")
+    musts.metric("Must-haves shown", "—" if must_share is None else f"{100 * must_share:.0f}%")
+    wording_share = (score.get("parts") or {}).get("wording")
+    wording.metric("Posting's own terms", "—" if wording_share is None else f"{100 * wording_share:.0f}%")
+    st.caption("The model sorts every requirement of the posting into categories: how important it is, how well the "
+               "résumé shows it, and whether it uses the posting's term. Code turns the categories into points: "
+               "requirements 65%, seniority 15%, title 10%, wording 10%, then × same occupation × must-haves kept.")
+    for missing in score.get("missing") or []:
+        st.error(f"Missing: {missing}")
+    for name in ("occupation", "seniority", "title"):
+        picked = score.get(name) or {}
+        st.caption(f"**{name.capitalize()}:** {str(picked.get('category', '')).replace('_', ' ')} — {picked.get('reason', '')}")
+    rows = [{"Requirement": item["requirement"], "Kind": KIND_WORDS.get(item["kind"], item["kind"]),
+             "Résumé": EVIDENCE_WORDS.get(item["evidence"], item["evidence"]),
+             "Wording": WORDING_WORDS.get(item["wording"], item["wording"]),
+             "Shown in": " | ".join(item.get("cited_text") or []) or ", ".join(item.get("cited") or []),
+             "Note": item.get("note", "")}
+            for item in sorted(score.get("requirements") or [],
+                               key=lambda item: ("must", "duty", "nice").index(item["kind"]))]
+    if rows:
+        st.dataframe(rows, hide_index=True, use_container_width=True)
+    removed = [line for lines in (score.get("lines_removed") or {}).values() for line in lines]
+    if removed:
+        st.warning("Lines addressed to the scorer were left out: " + " | ".join(removed))
+    if score.get("input_tokens"):
+        st.caption(f"One call to {score.get('model')}: {score['input_tokens']:,} tokens in, "
+                   f"{score['output_tokens']:,} out, ${score.get('cost_usd') or 0:.4f}.")
+
+
 def _show_ats_score(score: dict):
     _show_time_taken(score)
+    if score.get("scorer") == "rubric_v3":
+        _show_category_score(score)
+        return
     if score.get("scorer") == "rubric":
         _show_rubric_score(score)
         return
@@ -362,8 +405,8 @@ def _ats_score_panel(resume_id: str):
             job_description = st.text_area("Job description to score against", height=160,
                                            key=f"ats-jd-{resume_id}", placeholder="Paste the full posting here…")
         method = st.radio("Scoring method", list(api.SCORING_METHODS), key=f"ats-method-{resume_id}", horizontal=True,
-                          help="Rubric: one model call and a keyword check, quick and cheap. "
-                               "Line by line: Jev judges every line of the posting, steadier and slower.")
+                          help="One model call that sorts every requirement into categories; code turns them "
+                               "into the score.")
         if st.button("Calculate ATS score", key=f"ats-go-{resume_id}", type="primary"):
             if not is_a_copy and not job_description.strip():
                 st.warning("Paste a job description first.")

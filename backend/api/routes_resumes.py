@@ -1900,6 +1900,8 @@ async def _score_resume_impl(resume_id: str, depth: str):
 
 ATS_SCORER = "jev"
 RUBRIC_SCORER = "rubric"
+RUBRIC_V2_SCORER = "rubric_v2"
+RUBRIC_V3_SCORER = "rubric_v3"
 OPENROUTER = "openrouter"
 OPENROUTER_CREDITS_URL = "https://openrouter.ai/api/v1/credits"
 OUT_OF_CREDIT_MESSAGE = ("The OpenRouter account is out of credit, so this scoring method cannot run. "
@@ -1936,9 +1938,12 @@ async def ats_score_of_a_resume(resume_id: str, request_body: dict = None):
     the copy was tailored for is used. The reply is what line_match.ats_score returns.
 
     {"scorer": "rubric"} scores with one model call and a keyword check instead (rubric_ats_score.ats_score),
-    on the model named by {"model": ...}, one of rubric_ats_score.MODELS.
+    on the model named by {"model": ...}, one of rubric_ats_score.MODELS. {"scorer": "rubric_v2"} is its
+    second version (rubric_ats_score_v2.ats_score): GPT-6 Luna by default, with its thinking off.
+    {"scorer": "rubric_v3"} is the third (rubric_ats_score_v3.ats_score): the model sorts every requirement into
+    categories and code turns them into points.
     """
-    from backend.analyzer import line_match, rubric_ats_score
+    from backend.analyzer import line_match, rubric_ats_score, rubric_ats_score_v2, rubric_ats_score_v3
 
     resume_text, title_lines, saved_job_description = _resume_text_and_its_job_description(resume_id)
     job_description = str((request_body or {}).get("job_description") or "").strip() or saved_job_description
@@ -1948,7 +1953,19 @@ async def ats_score_of_a_resume(resume_id: str, request_body: dict = None):
         raise HTTPException(status_code=400, detail="Resume has insufficient text for scoring")
 
     provider = OPENROUTER
-    if (request_body or {}).get("scorer") == RUBRIC_SCORER:
+    scorer = (request_body or {}).get("scorer")
+    if scorer in (RUBRIC_V2_SCORER, RUBRIC_V3_SCORER):
+        model_name = (request_body or {}).get("model") or rubric_ats_score.LUNA
+        if model_name not in rubric_ats_score.MODELS:
+            raise HTTPException(status_code=400, detail=f"Unknown scoring model: {model_name}")
+        provider, model = rubric_ats_score.MODELS[model_name]
+        version = rubric_ats_score_v3 if scorer == RUBRIC_V3_SCORER else rubric_ats_score_v2
+        try:
+            result = await version.ats_score(resume_text, job_description, title_lines, provider, model,
+                                             reasoning=version.REASONING)
+        except NonRetryableLLMError as error:
+            raise HTTPException(status_code=PLAN_UNAVAILABLE, detail=str(error)[:400])
+    elif (request_body or {}).get("scorer") == RUBRIC_SCORER:
         model_name = (request_body or {}).get("model") or rubric_ats_score.GEMMA
         if model_name not in rubric_ats_score.MODELS:
             raise HTTPException(status_code=400, detail=f"Unknown scoring model: {model_name}")

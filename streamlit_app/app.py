@@ -283,9 +283,13 @@ def _show_rubric_score(score: dict):
     core.metric("Core skills kept", f"{100 * score['core_skills_kept']:.0f}%")
     keyword_share = (score.get("keywords") or {}).get("share")
     keywords.metric("Keywords matched", "—" if keyword_share is None else f"{100 * keyword_share:.0f}%")
+    times_asked = score.get("times_asked", 1)
     st.caption("Score = the parts below added by weight (the weights add up to 100%) × same occupation × core skills kept. "
+               "The model is asked once, picks one option per question and says why; the code does the arithmetic."
+               if times_asked == 1 else
+               "Score = the parts below added by weight (the weights add up to 100%) × same occupation × core skills kept. "
                "The model picks one option per question and says why; the code does the arithmetic. "
-               f"Asked {score.get('times_asked', 1)} times: each part earns the average, and the middle pick is shown.")
+               f"Asked {times_asked} times: each part earns the average, and the middle pick is shown.")
     for missing in score.get("missing") or []:
         st.error(f"Missing: {missing}")
     rows = [{"Part": PARTS_OF_THE_RUBRIC.get(row["question"], row["question"]), "Picked": row["meaning"],
@@ -313,7 +317,8 @@ def _show_rubric_score(score: dict):
     if score.get("input_tokens"):
         thinking = score.get("thinking_tokens") or 0
         of_which = f" (of which {thinking:,} thinking)" if thinking else ""
-        st.caption(f"Tokens for this score, over {score.get('times_asked', 1)} call(s) to {score.get('model')}: "
+        calls = score.get("times_asked", 1)
+        st.caption(f"Tokens for this score, {'in one call' if calls == 1 else f'over {calls} calls'} to {score.get('model')}: "
                    f"{score['input_tokens']:,} in, {score['output_tokens']:,} out{of_which}. "
                    "These are what the model was sent and wrote in full, with anything the route adds and all thinking.")
 

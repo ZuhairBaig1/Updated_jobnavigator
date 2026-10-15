@@ -1275,3 +1275,16 @@ def test_a_degree_or_a_number_of_years_is_not_a_broad_line():
     assert line_match._is_a_broad_line("8+ years of experience in the field", "experience", False) is False
     assert line_match._is_a_broad_line("Bachelors degree", "qualification", False) is False
     assert line_match._is_a_broad_line("Hands-on expertise with Kubernetes", "skill", True) is False
+
+
+def test_the_employers_key_skills_under_its_own_employment_type_line_are_kept():
+    """One details-box-like row ("Employment Type: Full-Time") above an employer's own Key Skills is not the job board's box."""
+    posting = ("DevOps Senior Engineer\nRole: DevOps Senior Engineer\nLocation: Hyderabad (On-site)\n"
+               "Experience: 10-15 Years\nEmployment Type: Full-Time\n\nKey Skills\n\n    Kubernetes (EKS)\n    ArgoCD & GitOps\n"
+               "\nKey Responsibilities\n\n    Build and maintain CI/CD pipelines using ArgoCD.\n")
+
+    cleaned = line_match.posting_as_plain_text(posting)
+
+    assert "Kubernetes (EKS)" in cleaned
+    assert "Build and maintain CI/CD pipelines using ArgoCD." in cleaned
+

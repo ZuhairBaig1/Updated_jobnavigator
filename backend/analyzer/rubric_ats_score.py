@@ -12,9 +12,11 @@ How it works:
      candidate's career is in this occupation and by how many of the job's core skills they have used.
 
 What keeps it steady:
-  - The model is asked several times at once. Each question earns the average of what its picks stand for,
-    so a question the model is in two minds about moves the score a little, not a whole step; the middle
-    pick is the one shown. Asked once, the same résumé scored 82 one time and 92 the next.
+  - The model is asked once. Asking it three times at once (each question earning the average of its picks,
+    the middle pick shown) narrowed the spread of ten scorings by only about a fifth, at three times the
+    cost: on the questions that swing the score the model is split close to even, and the middle of three
+    such picks is split too (measured 2026-10-15). The code below still combines any number of replies, so
+    TIMES_ASKED can be raised again.
   - What code can settle, code settles: the keywords, the core skills in the roles, and the years of work,
     which are added up from the roles' dates and set against the years the posting asks for.
   - A résumé and posting scored once are remembered, so asking again gives the same score.
@@ -57,10 +59,10 @@ MOST_WORDS_IN_A_REASON = 20
 RESUME_MAX_CHARS = 24_000
 POSTING_MAX_CHARS = 8_000
 MOST_MISSING_REQUIREMENTS = 3
-# How many times the model is asked. The middle pick of an odd number of answers needs no tie-break.
-TIMES_ASKED = 3
+# How many times the model is asked. Keep it odd if raised: the middle pick of an odd number needs no tie-break.
+TIMES_ASKED = 1
 # Changed whenever the rubric, the prompt or the arithmetic changes, so remembered scores are not reused.
-VERSION = "9"
+VERSION = "10"
 MOST_SCORES_REMEMBERED = 500
 
 

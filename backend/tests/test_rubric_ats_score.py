@@ -205,12 +205,12 @@ def test_the_prompts_stay_small():
 
 
 @pytest.mark.asyncio
-async def test_three_calls_give_the_score_the_reasons_and_the_cost(monkeypatch):
+async def test_one_call_gives_the_score_the_reasons_and_the_cost(monkeypatch):
     calls = _model_replies(monkeypatch, _reply())
 
     result = await rubric.ats_score(RESUME_WITH_A_FIGURE, POSTING)
 
-    assert len(calls) == rubric.TIMES_ASKED == 3
+    assert len(calls) == rubric.TIMES_ASKED == 1
     assert (calls[0]["provider"], calls[0]["model"]) == ("openrouter", "google/gemma-4-31b-it")
     assert calls[0]["temperature"] == 0
     assert result["scorer"] == "rubric"
@@ -219,7 +219,7 @@ async def test_three_calls_give_the_score_the_reasons_and_the_cost(monkeypatch):
     assert result["core_skills"] == {"named": ["Kubernetes"], "used": ["Kubernetes"], "not_used": [], "share": 1.0}
     row = result["rubric"][0]
     assert (row["question"], row["option"], row["reason"]) == ("occupation", "same", "why occupation")
-    assert (result["input_tokens"], result["output_tokens"]) == (15000, 900)
+    assert (result["input_tokens"], result["output_tokens"]) == (5000, 300)
 
 
 @pytest.mark.asyncio
@@ -251,6 +251,7 @@ def test_the_models_a_caller_may_name():
 
 @pytest.mark.asyncio
 async def test_the_middle_pick_of_the_three_replies_is_the_one_used(monkeypatch):
+    monkeypatch.setattr(rubric, "TIMES_ASKED", 3)      # asked several times, when raised again
     _model_replies(monkeypatch, _reply({**BEST_PICKS, "other_skills": "all"}), _reply({**BEST_PICKS, "other_skills": "few"}),
                    _reply({**BEST_PICKS, "other_skills": "most"}))
 
@@ -266,6 +267,7 @@ async def test_the_middle_pick_of_the_three_replies_is_the_one_used(monkeypatch)
 @pytest.mark.asyncio
 async def test_a_question_the_model_is_in_two_minds_about_moves_the_score_only_a_little(monkeypatch):
     """Other skills flips between all and most: one flip in three moves the score by a third of that step."""
+    monkeypatch.setattr(rubric, "TIMES_ASKED", 3)      # asked several times, when raised again
     _model_replies(monkeypatch, _reply())
     all_three = (await rubric.ats_score(RESUME, POSTING))["ats_score"]
     rubric._scores_remembered.clear()
@@ -286,6 +288,7 @@ def test_a_question_most_replies_call_not_asked_is_left_out():
 
 @pytest.mark.asyncio
 async def test_a_reply_that_fails_is_left_out_and_the_others_still_score(monkeypatch):
+    monkeypatch.setattr(rubric, "TIMES_ASKED", 3)      # asked several times, when raised again
     _model_replies(monkeypatch, RuntimeError("busy"), _reply())
 
     result = await rubric.ats_score(RESUME, POSTING)
@@ -302,9 +305,9 @@ async def test_the_same_resume_and_posting_are_scored_once_and_remembered(monkey
 
     assert (first["remembered"], second["remembered"]) == (False, True)
     assert {**second, "remembered": False} == first
-    assert len(calls) == 3
+    assert len(calls) == 1
     await rubric.ats_score(RESUME + " ", POSTING)      # a different résumé is asked about afresh
-    assert len(calls) == 6
+    assert len(calls) == 2
 
 
 def test_core_skills_count_when_most_replies_name_them():
@@ -365,6 +368,7 @@ def test_a_pick_of_half_or_less_can_only_lower_the_core_skills():
 
 @pytest.mark.asyncio
 async def test_one_odd_reply_about_the_occupation_does_not_move_the_score(monkeypatch):
+    monkeypatch.setattr(rubric, "TIMES_ASKED", 3)      # asked several times, when raised again
     _model_replies(monkeypatch, _reply())
     steady = (await rubric.ats_score(RESUME, POSTING))["ats_score"]
     rubric._scores_remembered.clear()
@@ -391,6 +395,7 @@ async def test_the_duties_earn_the_share_the_model_listed_as_met(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_the_duties_average_over_the_replies(monkeypatch):
+    monkeypatch.setattr(rubric, "TIMES_ASKED", 3)      # asked several times, when raised again
     _model_replies(monkeypatch, _reply(met=("a", "b"), not_met=()), _reply(met=("a",), not_met=("b",)),
                    _reply(met=("a", "b"), not_met=()))
 
@@ -523,4 +528,4 @@ async def test_input_served_from_the_providers_cache_is_counted_as_input(monkeyp
 
     result = await rubric.ats_score(RESUME, POSTING)
 
-    assert (result["input_tokens"], result["output_tokens"]) == (3 * 10073, 3 * 4356)
+    assert (result["input_tokens"], result["output_tokens"]) == (10073, 4356)

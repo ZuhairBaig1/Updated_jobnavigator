@@ -86,6 +86,10 @@ NOTE_ABOUT_HIGHLIGHTED_SKILLS = re.compile(r"skills highlighted with.{0,12}are p
 ROW_OF_THE_DETAILS_BOX = re.compile(r"^[\s#*_]*(UG|PG|Education|Role Category|Employment Type|Department|Industry Type)\b",
                                     re.IGNORECASE)
 ROWS_LOOKED_AT_ABOVE = 8
+# The job board's details box always has several of these rows. One alone is not enough: an employer's own
+# header often says "Employment Type: Full-Time" just above its own "Key Skills", and everything after it
+# was then cut as if it were the board's labels.
+FEWEST_ROWS_OF_THE_DETAILS_BOX = 2
 
 
 def _without_the_job_boards_key_skills(text: str) -> str:
@@ -95,7 +99,8 @@ def _without_the_job_boards_key_skills(text: str) -> str:
         return text
     last = key_skills_rows[-1]
     rows_above = [row for row in rows[:last] if row.strip()][-ROWS_LOOKED_AT_ABOVE:]
-    comes_after_the_details_box = any(ROW_OF_THE_DETAILS_BOX.match(row) for row in rows_above)
+    labels_of_the_details_box = {found.group(1).lower() for found in map(ROW_OF_THE_DETAILS_BOX.match, rows_above) if found}
+    comes_after_the_details_box = len(labels_of_the_details_box) >= FEWEST_ROWS_OF_THE_DETAILS_BOX
     has_the_note = bool(NOTE_ABOUT_HIGHLIGHTED_SKILLS.search("\n".join(rows[last:])))
     if comes_after_the_details_box or has_the_note:
         return "\n".join(rows[:last]).rstrip()

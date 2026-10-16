@@ -285,6 +285,45 @@ def test_structuring_rules_keep_terms_named_as_context():
     assert "Skills stay in the skills section" in _BASE_RULES
 
 
+def test_structuring_rules_follow_the_base_resume_knowledge_base():
+    from backend.api.routes_resumes import _BASE_RULES, _BASE_SYSTEM_PROMPT
+    assert "7.4 seconds" in _BASE_SYSTEM_PROMPT and "not a list of responsibilities" in _BASE_SYSTEM_PROMPT
+    assert "No job description is involved" in _BASE_SYSTEM_PROMPT
+    assert "Open with an action or impact word" in _BASE_RULES
+    assert "total years of experience early" in _BASE_RULES
+    assert "never bullet points" in _BASE_RULES
+    assert "job title of the most recent role" in _BASE_RULES
+    assert "Every certification the resume states" in _BASE_RULES
+    assert "relevant to the candidate's professional field" not in _BASE_RULES
+    assert "FINAL CHECK" in _BASE_RULES
+
+
+def _structuring_reply(headline, roles, certifications=()):
+    return {"header": {"name": "Jordan", "title": headline, "location": "", "email": "", "phone": "",
+                       "work_authorization": "", "github": "", "linkedin": ""},
+            "professional_summary": "", "technical_skills": [], "projects": [], "education": [],
+            "certifications": list(certifications),
+            "work_experience": [{"job_title": title, "company": "C", "location": "", "dates": "",
+                                 "start": "", "end": end, "current": current, "bullets": ["Built it."]}
+                                for title, end, current in roles]}
+
+
+def test_a_base_without_a_headline_takes_the_most_recent_roles_title():
+    older_first = [("Data Analyst", "2019-06", False), ("Senior Data Engineer", "", True)]
+    assert build_base_resume(_structuring_reply("", older_first))["header"]["title"] == "Senior Data Engineer"
+    ended = [("Data Engineer", "2023-04", False), ("Lead Data Engineer", "2024-11", False)]
+    assert build_base_resume(_structuring_reply("", ended))["header"]["title"] == "Lead Data Engineer"
+    # A headline the résumé prints is kept as it stands.
+    assert build_base_resume(_structuring_reply("GenAI Engineer", ended))["header"]["title"] == "GenAI Engineer"
+    assert build_base_resume(_structuring_reply("", []))["header"]["title"] == ""
+
+
+def test_a_base_keeps_every_certification_the_reply_holds():
+    certs = ["AWS Certified Data Engineer", "First Aid at Work", "AWS Certified Data Engineer"]
+    assert build_base_resume(_structuring_reply("", [], certs))["certifications"] == [
+        "AWS Certified Data Engineer", "First Aid at Work"]
+
+
 def test_technology_names_are_spelled_the_way_a_posting_spells_them():
     """A strict keyword matcher scores "Fast API" as zero against a JD asking for FastAPI."""
     from backend.analyzer.resume_schema import canonicalize_tech as c

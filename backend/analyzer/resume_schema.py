@@ -411,6 +411,19 @@ def _role_dates(role: dict) -> str:
     return end or start or ""
 
 
+def _most_recent_title(experience: list) -> str:
+    """The job title of the most recent role: an ongoing one, else the latest end date; the role
+    listed first breaks a tie, since a résumé lists its newest role first."""
+    def recency(i):
+        role = experience[i]
+        m = _ISO_DATE_RE.match(role.get("end") or "")
+        ended = (int(m.group(1)), int(m.group(2) or 0)) if m else (0, 0)
+        return (bool(role.get("current")), ended, -i)
+
+    titled = [i for i, role in enumerate(experience) if role.get("title")]
+    return experience[max(titled, key=recency)]["title"] if titled else ""
+
+
 def _graduation_date(edu: dict) -> str:
     """When an education entry ended, 'Mon YYYY' where the month is known; '' while it is ongoing or undated."""
     if edu.get("current"):
@@ -939,7 +952,7 @@ def build_base_resume(reply: dict) -> dict:
     items += [link for link in (github, linkedin) if link]
     header = {
         "name": field("name"),
-        # The headline the résumé prints under the name; the templates leave the line out when empty.
+        # The headline the résumé prints under the name; filled from the most recent role below when it prints none.
         "title": field("title"),
         "contact_items": items,
         # The split-out fields tailoring falls back on when the contact line lacks one.
@@ -984,6 +997,10 @@ def build_base_resume(reply: dict) -> dict:
     # bullet-less copy of a role, or parked the employer's description in one.
     experience = [r for r in experience if r["bullets"]]
     projects = [p for p in projects if p["bullets"]]
+
+    # A résumé that prints no headline gets its most recent role's title, as that role states it.
+    if not header["title"]:
+        header["title"] = _most_recent_title(experience)
 
     education = [
         {"school": _text(e.get("institution")),

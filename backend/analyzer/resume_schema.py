@@ -681,6 +681,31 @@ def _drop_vendor(key: str) -> str:
     return key
 
 
+def _names_in(value: str) -> list:
+    """Every name a skills line holds, including the ones inside a group: "AWS (EC2, S3); GCP" → AWS, EC2, S3, GCP."""
+    return [n.strip() for n in re.split(r"[,;()]", str(value or "")) if n.strip()]
+
+
+def _each_skill_once(skills: dict) -> dict:
+    """A base's skills with each skill listed once: a skill already named in an earlier category,
+    or earlier in its own, is left out where it repeats. An item whose group would bring a new
+    name with it stays, so no skill the résumé states is lost.
+    """
+    seen, out = [], {}
+    for label, value in skills.items():
+        kept = []
+        for item in _split_skills(value):
+            group = _names_in(item)[1:]
+            repeated = any(_same_skill(item, s) for s in seen)
+            if repeated and all(any(_same_skill(g, s) for s in seen) for g in group):
+                continue
+            kept.append(item)
+            seen += _names_in(item)
+        if kept:
+            out[label] = ", ".join(kept)
+    return out
+
+
 def _skill_is_grounded(skill: str, base_text: str, base_terms: list) -> bool:
     """Whether the base states this skill, allowing for the JD's wording of it.
 
@@ -998,9 +1023,11 @@ def build_base_resume(reply: dict) -> dict:
     experience = [r for r in experience if r["bullets"]]
     projects = [p for p in projects if p["bullets"]]
 
-    # A résumé that prints no headline gets its most recent role's title, as that role states it.
-    if not header["title"]:
-        header["title"] = _most_recent_title(experience)
+    # A résumé that prints no headline gets its most recent role's title, exactly as that role
+    # states it: a model that recased it ("engineer" → "Engineer") gets the role's own spelling.
+    most_recent = _most_recent_title(experience)
+    if not header["title"] or header["title"].casefold() == most_recent.casefold():
+        header["title"] = most_recent
 
     education = [
         {"school": _text(e.get("institution")),
@@ -1022,7 +1049,7 @@ def build_base_resume(reply: dict) -> dict:
     return drop_empty_entries({
         "header": header,
         "summary": canonicalize_tech(_text(reply.get("professional_summary"))),
-        "skills": _skills_map(reply.get("technical_skills")),
+        "skills": _each_skill_once(_skills_map(reply.get("technical_skills"))),
         "experience": experience,
         "projects": projects,
         "education": education,

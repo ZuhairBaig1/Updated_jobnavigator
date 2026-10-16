@@ -1658,7 +1658,7 @@ _BASE_RULES = (
     "- A field the resume does not state stays empty. Never add a link the resume does not have.\n\n"
     "3. PROFESSIONAL SUMMARY\n"
     "- Concise: a short paragraph of prose, never bullet points.\n"
-    "- Open with an action or impact word (e.g. \"Accomplished\"), followed by what the candidate is in the resume's own words: \"Accomplished Java developer with 9+ years of experience...\".\n"
+    "- Open with an action or impact word, such as \"Accomplished\": a word that signals achievement, not one that only describes the candidate's experience or attitude. This applies to every summary: when the resume's own summary opens with another word, replace that word, and put the action or impact word in front of the resume's own description of the candidate, e.g. \"Accomplished Java developer with 9+ years of experience...\".\n"
     "- State the total years of experience early, in the opening sentence, so a recruiter's scan and the parser both reach it first. Only the years the resume states; when it states none, leave them out.\n"
     "- Include quantified achievements, real ones only: numbers the resume states.\n"
     "- Include the candidate's core skills and technologies; they must also appear in the experience bullets.\n\n"

@@ -316,6 +316,26 @@ def test_a_base_without_a_headline_takes_the_most_recent_roles_title():
     # A headline the résumé prints is kept as it stands.
     assert build_base_resume(_structuring_reply("GenAI Engineer", ended))["header"]["title"] == "GenAI Engineer"
     assert build_base_resume(_structuring_reply("", []))["header"]["title"] == ""
+    # A model that recased the role's title gets the role's own spelling back.
+    recased = _structuring_reply("Senior DevOps Engineer", [("Senior DevOps engineer", "", True)])
+    assert build_base_resume(recased)["header"]["title"] == "Senior DevOps engineer"
+
+
+def test_a_base_lists_each_skill_once():
+    reply = _structuring_reply("", [])
+    reply["technical_skills"] = [
+        {"category": "Cloud Platforms", "skills": "AWS (EC2, S3, EBS); Microsoft Azure (AKS, Azure Storage)"},
+        {"category": "Containers", "skills": "Docker, Kubernetes, AKS, Argo CD"},
+        {"category": "CI/CD", "skills": "Jenkins, Argo CD, Docker"},
+        {"category": "Storage", "skills": "Amazon EBS, S3, Azure Storage, GCP Cloud Storage"},
+        {"category": "Clouds again", "skills": "AWS (EC2, Lambda)"}]
+    assert build_base_resume(reply)["skills"] == {
+        "Cloud Platforms": "AWS (EC2, S3, EBS); Microsoft Azure (AKS, Azure Storage)",
+        "Containers": "Docker, Kubernetes, ArgoCD",
+        "CI/CD": "Jenkins",
+        "Storage": "GCP Cloud Storage",
+        # Repeats AWS, but brings Lambda with it, so it stays.
+        "Clouds again": "AWS (EC2, Lambda)"}
 
 
 def test_a_base_keeps_every_certification_the_reply_holds():

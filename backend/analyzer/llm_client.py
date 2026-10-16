@@ -284,6 +284,9 @@ OPENROUTER_MODEL_LADDERS = {
     "anthropic/claude-haiku-5.5": (None,),
     # Checked 2026-10-13: only OpenAI's own hosts serve it, so it starts unpinned.
     "openai/gpt-6-luna": (None,),
+    # ATS score Fast (Jev)'s extractor (2026-10-16): only Google serves it, so it starts unpinned rather than spending
+    # two attempts on the default pins, which matters because Fast (Jev) is built for speed.
+    "google/gemini-2.5-flash-lite": (None,),
 }
 
 

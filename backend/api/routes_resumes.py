@@ -1900,8 +1900,8 @@ async def _score_resume_impl(resume_id: str, depth: str):
 
 ATS_SCORER = "jev"
 RUBRIC_SCORER = "rubric"
-RUBRIC_V2_SCORER = "rubric_v2"
-RUBRIC_V3_SCORER = "rubric_v3"
+ATS_DEFAULT_SCORER = "ats_default"            # Default: GPT-6 Luna + keyword match
+ATS_FAST_JEV_SCORER = "ats_fast_jev"    # Fast (Jev): built for speed, a fast extractor + Jev
 OPENROUTER = "openrouter"
 OPENROUTER_CREDITS_URL = "https://openrouter.ai/api/v1/credits"
 OUT_OF_CREDIT_MESSAGE = ("The OpenRouter account is out of credit, so this scoring method cannot run. "
@@ -1937,13 +1937,13 @@ async def ats_score_of_a_resume(resume_id: str, request_body: dict = None):
     The job description comes from the request ({"job_description": "..."}); without one, the description
     the copy was tailored for is used. The reply is what line_match.ats_score returns.
 
-    {"scorer": "rubric"} scores with one model call and a keyword check instead (rubric_ats_score.ats_score),
-    on the model named by {"model": ...}, one of rubric_ats_score.MODELS. {"scorer": "rubric_v2"} is its
-    second version (rubric_ats_score_v2.ats_score): GPT-6 Luna by default, with its thinking off.
-    {"scorer": "rubric_v3"} is the third (rubric_ats_score_v3.ats_score): the model sorts every requirement into
-    categories and code turns them into points.
+    {"scorer": "ats_default"} is Default, the app's default (ats_score_default.ats_score): GPT-6 Luna judges every requirement into
+    categories and code matches the posting's own search terms; {"model": ...} picks one of
+    rubric_ats_score.MODELS, Luna by default. {"scorer": "ats_fast_jev"} (ats_score_fast_jev.ats_score) is built for
+    speed: a fast model lists the requirements and Jev judges them; it takes no "model". {"scorer": "rubric"}
+    is the original rubric scorer (rubric_ats_score.ats_score), on the model named by {"model": ...}.
     """
-    from backend.analyzer import line_match, rubric_ats_score, rubric_ats_score_v2, rubric_ats_score_v3
+    from backend.analyzer import ats_score_default, ats_score_fast_jev, line_match, rubric_ats_score
 
     resume_text, title_lines, saved_job_description = _resume_text_and_its_job_description(resume_id)
     job_description = str((request_body or {}).get("job_description") or "").strip() or saved_job_description
@@ -1954,15 +1954,19 @@ async def ats_score_of_a_resume(resume_id: str, request_body: dict = None):
 
     provider = OPENROUTER
     scorer = (request_body or {}).get("scorer")
-    if scorer in (RUBRIC_V2_SCORER, RUBRIC_V3_SCORER):
+    if scorer == ATS_FAST_JEV_SCORER:
+        try:
+            result = await ats_score_fast_jev.ats_score(resume_text, job_description, title_lines)
+        except NonRetryableLLMError as error:
+            raise HTTPException(status_code=PLAN_UNAVAILABLE, detail=str(error)[:400])
+    elif scorer == ATS_DEFAULT_SCORER:
         model_name = (request_body or {}).get("model") or rubric_ats_score.LUNA
         if model_name not in rubric_ats_score.MODELS:
             raise HTTPException(status_code=400, detail=f"Unknown scoring model: {model_name}")
         provider, model = rubric_ats_score.MODELS[model_name]
-        version = rubric_ats_score_v3 if scorer == RUBRIC_V3_SCORER else rubric_ats_score_v2
         try:
-            result = await version.ats_score(resume_text, job_description, title_lines, provider, model,
-                                             reasoning=version.REASONING)
+            result = await ats_score_default.ats_score(resume_text, job_description, title_lines, provider, model,
+                                                  reasoning=ats_score_default.REASONING)
         except NonRetryableLLMError as error:
             raise HTTPException(status_code=PLAN_UNAVAILABLE, detail=str(error)[:400])
     elif (request_body or {}).get("scorer") == RUBRIC_SCORER:

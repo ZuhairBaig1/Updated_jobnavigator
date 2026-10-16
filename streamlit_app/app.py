@@ -329,44 +329,84 @@ WORDING_WORDS = {"exact": "Posting's term", "other": "Another name", "none": "No
 KIND_WORDS = {"must": "Must-have", "duty": "Duty", "nice": "Nice to have"}
 
 
-def _show_category_score(score: dict):
-    """Version 3: the score, the overall categories, and every requirement with the category it was given."""
-    total, occupation, musts, wording = st.columns(4)
+UNDER_TESTING = ("The Default and Fast (Jev) ATS scores are under testing and will most likely not perform well right now. "
+                 "Treat the score as a rough guide, not a verdict.")
+ATS_SCORERS = ("ats_default", "ats_fast_jev")
+FORMAT_STATUS = {"pass": "✅", "warn": "⚠️", "fail": "❌"}
+KEYWORD_STATUS = {"found": "In the résumé", "other_name": "Another name (half credit)", "not_found": "Missing"}
+
+
+def _show_keyword_score(score: dict):
+    """Default and Fast (Jev): the score, every requirement, the posting's search terms, and the format checks beside it."""
+    total, occupation, musts, keywords = st.columns(4)
     total.metric("ATS score", f"{score['ats_score']} / 100")
     occupation.metric("Same occupation", f"{100 * score['same_occupation']:.0f}%")
     must_share = score.get("must_have_share")
     musts.metric("Must-haves shown", "—" if must_share is None else f"{100 * must_share:.0f}%")
-    wording_share = (score.get("parts") or {}).get("wording")
-    wording.metric("Posting's own terms", "—" if wording_share is None else f"{100 * wording_share:.0f}%")
-    st.caption("The model sorts every requirement of the posting into categories: how important it is, how well the "
-               "résumé shows it, and whether it uses the posting's term. Code turns the categories into points: "
-               "requirements 65%, seniority 15%, title 10%, wording 10%, then × same occupation × must-haves kept.")
+    keyword_share = (score.get("parts") or {}).get("keywords")
+    keywords.metric("Posting's terms found", "—" if keyword_share is None else f"{100 * keyword_share:.0f}%")
+    weights = score.get("weights") or {}
+    st.caption("Score = " + ", ".join(f"{part} {100 * weight:.0f}%" for part, weight in weights.items())
+               + ", then × same occupation × must-haves kept. "
+               + ("Jev judged every requirement; points are the expected value over its five levels."
+                  if score.get("scorer") == "ats_fast_jev" else
+                  "GPT-6 Luna judged every requirement; code checked every claim and matched the terms."))
+    for warning in score.get("warnings") or []:
+        st.warning(warning)
     for missing in score.get("missing") or []:
         st.error(f"Missing: {missing}")
+    least = score.get("least_certain")
+    if least:
+        st.caption(f"Least certain judgement: \"{least['requirement']}\" at confidence {least['confidence']:.2f}; "
+                   f"{least['below_threshold']} requirement(s) below {least['threshold']:.1f}.")
     for name in ("occupation", "seniority", "title"):
         picked = score.get(name) or {}
-        st.caption(f"**{name.capitalize()}:** {str(picked.get('category', '')).replace('_', ' ')} — {picked.get('reason', '')}")
+        why = picked.get("reason") or picked.get("note") or ""
+        st.caption(f"**{name.capitalize()}:** {str(picked.get('category', '')).replace('_', ' ')}"
+                   + (f" — {why}" if why else ""))
     rows = [{"Requirement": item["requirement"], "Kind": KIND_WORDS.get(item["kind"], item["kind"]),
              "Résumé": EVIDENCE_WORDS.get(item["evidence"], item["evidence"]),
-             "Wording": WORDING_WORDS.get(item["wording"], item["wording"]),
-             "Shown in": " | ".join(item.get("cited_text") or []) or ", ".join(item.get("cited") or []),
-             "Note": item.get("note", "")}
+             "Points": round(100 * item["points"]),
+             "Wording": WORDING_WORDS.get(item.get("wording"), "—"),
+             "Search terms": ", ".join(item.get("terms") or []),
+             "Shown in": " | ".join(item.get("cited_text") or []), "Note": item.get("note", "")}
             for item in sorted(score.get("requirements") or [],
                                key=lambda item: ("must", "duty", "nice").index(item["kind"]))]
     if rows:
-        st.dataframe(rows, hide_index=True, use_container_width=True)
+        st.dataframe(rows, hide_index=True, use_container_width=True,
+                     column_config={"Points": st.column_config.ProgressColumn("Points", format="%d", min_value=0,
+                                                                              max_value=100)})
+    found = score.get("keywords") or {}
+    if found.get("terms"):
+        st.markdown("**The posting's search terms** — matched the way a recruiter's ATS search matches them")
+        st.dataframe([{"Term": row["term"], "Kind": KIND_WORDS.get(row["kind"], row["kind"]),
+                       "Status": KEYWORD_STATUS.get(row["status"], row["status"]), "Where": row.get("where", "")}
+                      for row in found["terms"]], hide_index=True, use_container_width=True)
+    form = score.get("format") or {}
+    if form.get("checks"):
+        st.markdown(f"**ATS format checks** — {form['passed']} of {form['total']} passed (shown beside the score, "
+                    "not inside it)")
+        st.dataframe([{"": FORMAT_STATUS.get(check["status"], ""), "Check": check["label"], "Detail": check["detail"]}
+                      for check in form["checks"]], hide_index=True, use_container_width=True)
     removed = [line for lines in (score.get("lines_removed") or {}).values() for line in lines]
     if removed:
         st.warning("Lines addressed to the scorer were left out: " + " | ".join(removed))
+    timings = score.get("timings")
+    if timings:
+        remembered = " (the posting's list was remembered)" if score.get("posting_remembered") else ""
+        st.caption(f"Stages: list the requirements {timings['extract']:.2f}s{remembered}, judge the overall questions "
+                   f"{timings['judge_overall']:.2f}s (in parallel), judge the requirements "
+                   f"{timings['judge_requirements']:.2f}s; total {timings['total']:.2f}s.")
     if score.get("input_tokens"):
-        st.caption(f"One call to {score.get('model')}: {score['input_tokens']:,} tokens in, "
-                   f"{score['output_tokens']:,} out, ${score.get('cost_usd') or 0:.4f}.")
+        st.caption(f"{score.get('model')}: {score['input_tokens']:,} tokens in, {score.get('output_tokens', 0):,} out, "
+                   f"${score.get('cost_usd') or 0:.4f}.")
 
 
 def _show_ats_score(score: dict):
     _show_time_taken(score)
-    if score.get("scorer") == "rubric_v3":
-        _show_category_score(score)
+    if score.get("scorer") in ATS_SCORERS:
+        st.caption(f"⚠️ {UNDER_TESTING}")
+        _show_keyword_score(score)
         return
     if score.get("scorer") == "rubric":
         _show_rubric_score(score)
@@ -405,8 +445,11 @@ def _ats_score_panel(resume_id: str):
             job_description = st.text_area("Job description to score against", height=160,
                                            key=f"ats-jd-{resume_id}", placeholder="Paste the full posting here…")
         method = st.radio("Scoring method", list(api.SCORING_METHODS), key=f"ats-method-{resume_id}", horizontal=True,
-                          help="One model call that sorts every requirement into categories; code turns them "
-                               "into the score.")
+                          help="Default: one GPT-6 Luna call judges every requirement; code checks its claims, "
+                               "matches the posting's own search terms and adds up the score, with format checks "
+                               "beside it. Fast (Jev): built for speed — a fast model lists the requirements and Jev "
+                               "judges them, on the same scale as Default.")
+        st.warning(UNDER_TESTING)
         if st.button("Calculate ATS score", key=f"ats-go-{resume_id}", type="primary"):
             if not is_a_copy and not job_description.strip():
                 st.warning("Paste a job description first.")

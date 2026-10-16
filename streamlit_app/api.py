@@ -133,9 +133,11 @@ def start_tailoring(base_resume_id: str, job_description: str, way: str = "") ->
 
 # The ways of scoring the toggle offers: what the backend is asked for, and what the user is told.
 SCORING_METHODS = {
-    # Version 3: the model sorts every requirement into categories, code turns them into points. The backend
-    # still serves version 1 ("rubric") and version 2 ("rubric_v2").
-    "ATS score v3 — GPT-6 Luna on OpenRouter": {"scorer": "rubric_v3", "model": "luna"},
+    # Default first, so it is the default: GPT-6 Luna judges every requirement, code matches the posting's own
+    # search terms. Fast (Jev) is built for speed: a fast model lists the requirements and Jev judges them. The backend
+    # still serves the original rubric scorer ("rubric").
+    "Default — GPT-6 Luna + keyword match": {"scorer": "ats_default", "model": "luna"},
+    "Fast (Jev) — Jev + keyword match": {"scorer": "ats_fast_jev"},
 }
 
 

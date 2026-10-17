@@ -184,3 +184,18 @@ docker-compose.override.yml
 
 # local backlog
 BACKLOG.md
+
+# Ruflo local secrets and runtime data
+.env.local
+.env.*.local
+.claude-flow/data/
+.claude-flow/logs/
+.claude-flow/sessions/
+
+# Ruflo (claude-flow) setup and data: kept local, never pushed
+.mcp.json
+.agents/
+.claude-flow/
+.swarm/
+ruvector.db
+skills-lock.json

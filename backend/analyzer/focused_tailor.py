@@ -44,14 +44,11 @@ _NUMBERS = {"type": "array", "items": _INT}
 
 def _schema_of_the_reply(keeps_everything: bool) -> dict:
     """The reply's format. The matching comes before the writing, so the model has found its evidence before it chooses bullets."""
-    # A complete copy also lists, per role, the bullets it did not rewrite, in the order to print them.
     others = {"other_bullets": _NUMBERS} if keeps_everything else {}
     return rs._obj({
         rs.TARGET_JOB_TITLE: rs._STR,
-        # Neither has a shape code can recognise in a contact line, so the reply points at each (see rs._tailored_header).
         "header": rs._obj({"location": rs._STR, "work_authorization": rs._STR}),
-        # The matching is two fifths of what the model writes, and writing is where the time goes, so each entry
-        # is kept short: its name, its kind, whether the résumé has it, and the bullets that show it as "role.bullet".
+
         "requirements": rs._arr({"name": rs._STR,
                                  "kind": {"type": "string", "enum": [MUST_HAVE, NICE_TO_HAVE, DUTY]},
                                  "has": rs._BOOL,

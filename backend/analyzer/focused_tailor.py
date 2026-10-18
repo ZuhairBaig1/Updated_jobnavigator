@@ -15,8 +15,8 @@ import json
 
 from backend.analyzer import resume_schema as rs
 from backend.analyzer.focused_tailor_basics import (BULLETS_OF_AN_EARLIER_ROLE, BULLETS_OF_THE_LATEST_ROLES, DUTY,
-                                                    FROM_A_JOB, FROM_A_PROJECT, FROM_NOWHERE, FROM_THE_SKILLS,
-                                                    MUST_HAVE, NICE_TO_HAVE, _bullets_of, _projects, _roles)
+                                                    FROM_A_JOB, FROM_A_PROJECT, FROM_THE_SKILLS, MUST_HAVE,
+                                                    NICE_TO_HAVE, _bullets_of, _projects, _roles)
 from backend.analyzer.focused_tailor_bullets import (_with_all_the_rest, bullets_a_role_gets, focused_bullets,
                                                      improved_by_swaps, the_most_important)
 from backend.analyzer.focused_tailor_matching import other_names_allowed, requirements_matched
@@ -45,6 +45,8 @@ MOST_GAPS_REPORTED = 12
 _INT = {"type": "integer"}
 _BULLET = rs._obj({"text": rs._STR, "from_bullets": {"type": "array", "items": _INT}})
 _NUMBERS = {"type": "array", "items": _INT}
+# A place in the résumé that shows a requirement: a bullet of a job, a bullet of a project, or a skills line.
+_PLACE = rs._obj({"source": {"type": "string", "enum": [FROM_A_JOB, FROM_A_PROJECT, FROM_THE_SKILLS]}, "at": rs._STR})
 
 
 def _schema_of_the_reply(keeps_everything: bool) -> dict:
@@ -57,9 +59,7 @@ def _schema_of_the_reply(keeps_everything: bool) -> dict:
         "requirements": rs._arr({"name": rs._STR,
                                  "kind": {"type": "string", "enum": [MUST_HAVE, NICE_TO_HAVE, DUTY]},
                                  "has": rs._BOOL,
-                                 "source": {"type": "string",
-                                            "enum": [FROM_A_JOB, FROM_A_PROJECT, FROM_THE_SKILLS, FROM_NOWHERE]},
-                                 "by": rs._STR_LIST}),
+                                 "by": {"type": "array", "items": _PLACE}}),
         "same_thing_other_name": rs._arr({"posting_name": rs._STR, "resume_name": rs._STR}),
         "professional_summary": rs._STR,
         "technical_skills": rs._arr({"category": rs._STR, "skills": rs._STR}),
@@ -96,9 +96,8 @@ STEP 1 - READ THE POSTING AND THE CONTACT LINE
 STEP 2 - MATCH THE RESUME TO IT
 - List in requirements every skill, tool, qualification and duty the posting names, one per entry. name is it in the posting's words (six words at most); kind is must (required), nice (preferred) or duty. One entry per skill: "Python, Pandas, and FastAPI" is three entries.
 - has says whether the resume has it anywhere: a bullet, the skills, the summary, the education or the dates.
-- source says where the resume shows it best: job when a bullet of a ROLE shows it, project when only a bullet of a PROJECT shows it, skills when only a SKILLS line lists it, none when none of them does.
-- by gives the one or two places in that source that show it, numbered as the resume below numbers them. For job, role number, a dot, bullet number: "2.5" is bullet 5 of role 2. For project, project number, a dot, bullet number: "1.3" is bullet 3 of project 1. For skills, the skills line number: "4". A place shows a requirement only when it names it or plainly describes doing it; never point at a place because it is about something related. Leave by empty when source is none.
-- A requirement whose source is not job never appears in a bullet you write for a role.
+- by lists the places in the resume that show it. Each place is its source, which is only ever job, project or skills, and where it is in that source, numbered as the resume below numbers it: {"source": "job", "at": "2.5"} is bullet 5 of role 2, {"source": "project", "at": "1.3"} is bullet 3 of project 1, {"source": "skills", "at": "4"} is skills line 4. The summary, the education and anything else are never a source. A requirement can be shown in several sources: list every source that shows it, with the one or two places of each that show it best. A place shows a requirement only when it names it or plainly describes doing it; never point at a place because it is about something related. Leave by empty when no place shows it.
+- A requirement that no job bullet shows never appears in a bullet you write for a role.
 - When the posting and the resume name the SAME thing differently, list the pair in same_thing_other_name and use the posting's name ("MSSQL" for "SQL Server").
 - A narrower or different thing is NOT the same thing: "GitHub" is not "GitHub Actions", "Kubernetes" is not "AKS", "JavaScript" is not "JavaScript ES6+". If unsure, treat the two as different.
 
@@ -139,7 +138,7 @@ _STEP_3_OF_A_FOCUSED_COPY = """STEP 3 - CHOOSE WHAT STAYS
 - These are the role's most important points for THIS posting: together they show as many of the posting's requirements and duties as the role truthfully can, the musts first. Prefer a point that states a number.
 - To fit more into so few bullets, write each one from two or three bullets of the role that belong together. Drop what serves nothing the posting asks for, however impressive.
 - The posting's duties count as much as its tools. Where a role shows the working practices the posting lists (reviews, team ceremonies, troubleshooting, documentation, working with other teams), one of its bullets gathers them, in the posting's wording.
-- Every must whose source is job is shown by at least one bullet you keep, and named in it in the posting's wording. Check each one before you finish.
+- Every must that a job bullet shows is shown by at least one bullet you keep, and named in it in the posting's wording. Check each one before you finish.
 - When the resume lacks a must-have but shows a close relative of it (another framework of the same kind), keep the bullet that shows the relative, under its own name. Never rename it.
 - Order each role's bullets by how much they matter to this posting. The first bullets of the most recent role are read most: they show the posting's top must-haves.
 - Keep a project or a certification only when it shows something the posting asks for."""
@@ -148,7 +147,7 @@ _STEP_3_OF_A_COMPLETE_COPY = """STEP 3 - ARRANGE THE RESUME AROUND THE POSTING, 
 - Every bullet of every role and project stays in the resume. You decide which are rewritten and the order of all of them.
 - Lean the whole resume towards what the posting wants: rewrite (step 4) every bullet the posting's keywords or wording can honestly apply to. Every bullet you named in a by is one of them. Only a bullet with nothing in common with the posting stays as written.
 - In each role the rewritten bullets go first, the one that matters most to the posting at the top.
-- Every must whose source is job is shown by a rewritten bullet, and named in it in the posting's wording. Check each one before you finish.
+- Every must that a job bullet shows is shown by a rewritten bullet, and named in it in the posting's wording. Check each one before you finish.
 - The first bullets of the most recent role are read most: they show the posting's top must-haves.
 - Bullets of the same role that say nearly the same thing may become one rewritten bullet: give all their numbers in from_bullets.
 - When the resume lacks a must-have but shows a close relative of it (another framework of the same kind), rewrite the bullet that shows the relative, under its own name. Never rename it.

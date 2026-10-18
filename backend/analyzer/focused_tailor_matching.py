@@ -7,13 +7,13 @@ for something the résumé names differently must truly be the same thing.
 import re
 
 from backend.analyzer import resume_schema as rs
-from backend.analyzer.focused_tailor_basics import (FROM_A_JOB, FROM_A_PROJECT, FROM_NOWHERE, FROM_THE_SKILLS,
-                                                    MOST_WORDS_IN_A_KEYWORD)
+from backend.analyzer.focused_tailor_basics import FROM_A_JOB, FROM_A_PROJECT, FROM_THE_SKILLS, MOST_WORDS_IN_A_KEYWORD
 from backend.analyzer.focused_tailor_checks import _KEYWORD_PARTS, _adds_words_to, _is_stated
 
-# A reply's pointer at a bullet of a job or a project: "2.5" is its bullet 5 of job (or project) 2.
-_ROLE_DOT_BULLET = re.compile(r"^\s*(\d+)\s*\.\s*(\d+)\s*$")
-
+# Where a pointer leads inside its source: "2.5" is bullet 5 of job (or project) 2, "4" is skills line 4.
+_PLACE_NUMBERS = re.compile(r"^\s*(\d+)(?:\s*\.\s*(\d+))?\s*$")
+# An older reply wrote the source into a text pointer ("job 1.5"), or left it out ("1.5" is a job's bullet).
+_SOURCE_WORD = re.compile(r"^\s*(job|project|skills)\s+", re.IGNORECASE)
 
 def other_names_allowed(reply: dict, base_text: str, jd_text: str) -> dict:
     """The posting's name for something the résumé names differently, as {posting name: résumé name}.
@@ -39,65 +39,61 @@ def other_names_allowed(reply: dict, base_text: str, jd_text: str) -> dict:
 def requirements_matched(reply: dict, roles: list, projects: list = (), skill_lines: int = 0) -> list:
     """The reply's matching of the posting to the résumé, one entry a keyword.
 
-    The reply writes each as {"name", "kind", "has", "source", "by"}; each comes back as
-    {"requirement", "importance", "shown_by", "resume_has_it", "source", "found_at"}.
-    `found_at` is where the source shows it: (job, bullet), (project, bullet) or a skills line number.
-    `shown_by` is the same for a job and empty otherwise, since only a job's bullets are chosen by what they show.
+    The reply writes each as {"name", "kind", "has", "by": [{"source": "job", "at": "1.5"}, ...]}; each comes back as
+    {"requirement", "importance", "shown_by", "resume_has_it", "found_at"}.
+    `found_at` holds every place that exists, by kind: {"job": [(job, bullet)], "project": [(project, bullet)],
+    "skills": [line]}. `shown_by` is its job places, since only a job's bullets are chosen by what they show.
     """
     matched = []
     for entry in (reply or {}).get("requirements") or []:
         if not isinstance(entry, dict) or not rs._text(entry.get("name")):
             continue
-        source = _source_of(entry)
-        found_at = _places_it_points_at(entry.get("by"), source, roles, projects, skill_lines)
-        shown_by = found_at if source == FROM_A_JOB else []
-        resume_has_it = bool(entry.get("has")) or bool(found_at)
+        found_at = _places_it_points_at(entry.get("by"), roles, projects, skill_lines)
+        resume_has_it = bool(entry.get("has")) or any(found_at.values())
         for name in _one_keyword_each(rs._text(entry["name"])):
-            matched.append({"requirement": name, "importance": entry.get("kind"), "shown_by": shown_by,
-                            "resume_has_it": resume_has_it, "source": source, "found_at": found_at})
+            matched.append({"requirement": name, "importance": entry.get("kind"), "shown_by": found_at[FROM_A_JOB],
+                            "resume_has_it": resume_has_it, "found_at": found_at})
     return matched
 
 
-def _source_of(entry: dict) -> str:
-    """Where the reply says the résumé shows a requirement; a reply that names no source points at jobs, as before."""
-    source = entry.get("source")
-    return source if source in (FROM_A_JOB, FROM_A_PROJECT, FROM_THE_SKILLS, FROM_NOWHERE) else FROM_A_JOB
+def _places_it_points_at(pointers, roles: list, projects: list, skill_lines: int) -> dict:
+    """The reply's pointers that lead to a place the résumé has, by kind; any other is dropped."""
+    found_at = {FROM_A_JOB: [], FROM_A_PROJECT: [], FROM_THE_SKILLS: []}
+    for pointer in pointers or []:
+        place = _place(pointer, roles, projects, skill_lines)
+        if place:
+            kind, where = place
+            found_at[kind].append(where)
+    return found_at
 
 
-def _places_it_points_at(pointers, source: str, roles: list, projects: list, skill_lines: int) -> list:
-    """The reply's pointers that exist in the source it named; any other is dropped."""
-    if source == FROM_A_JOB:
-        return _bullets_it_points_at(pointers, roles)
-    if source == FROM_A_PROJECT:
-        return _bullets_it_points_at(pointers, projects)
+def _place(pointer, roles: list, projects: list, skill_lines: int):
+    """One pointer as (source, where it leads) when the résumé has that place; None otherwise."""
+    source, place = _source_and_place(pointer)
+    numbers = _PLACE_NUMBERS.match(place)
+    if not numbers or source not in (FROM_A_JOB, FROM_A_PROJECT, FROM_THE_SKILLS):
+        return None
+    number, bullet = int(numbers.group(1)), numbers.group(2)
     if source == FROM_THE_SKILLS:
-        return _skill_lines_it_points_at(pointers, skill_lines)
-    return []
+        return (source, number) if bullet is None and 1 <= number <= skill_lines else None
+    entries = roles if source == FROM_A_JOB else projects
+    if bullet is None or not 1 <= number <= len(entries):
+        return None
+    bullet = int(bullet)
+    if 1 <= bullet <= len(entries[number - 1].get("bullets") or []):
+        return (source, (number, bullet))
+    return None
 
 
-def _bullets_it_points_at(pointers, entries: list) -> list:
-    """The reply's "entry.bullet" pointers into jobs or projects as (entry number, bullet number);
-    one at an entry or bullet the résumé lacks is dropped."""
-    pointed_at = []
-    for pointer in pointers or []:
-        written = _ROLE_DOT_BULLET.match(str(pointer))
-        if not written:
-            continue
-        entry_number, bullet_number = int(written.group(1)), int(written.group(2))
-        entry_exists = 1 <= entry_number <= len(entries)
-        if entry_exists and 1 <= bullet_number <= len(entries[entry_number - 1].get("bullets") or []):
-            pointed_at.append((entry_number, bullet_number))
-    return pointed_at
-
-
-def _skill_lines_it_points_at(pointers, skill_lines: int) -> list:
-    """The reply's pointers at skills lines, as line numbers; one the résumé lacks is dropped."""
-    pointed_at = []
-    for pointer in pointers or []:
-        written = str(pointer).strip()
-        if written.isdigit() and 1 <= int(written) <= skill_lines:
-            pointed_at.append(int(written))
-    return pointed_at
+def _source_and_place(pointer) -> tuple:
+    """A pointer's source and its place in that source: {"source": "job", "at": "1.5"} is ("job", "1.5")."""
+    if isinstance(pointer, dict):
+        return str(pointer.get("source") or "").lower(), str(pointer.get("at") or "")
+    text = str(pointer)
+    written = _SOURCE_WORD.match(text)
+    if written:
+        return written.group(1).lower(), text[written.end():]
+    return FROM_A_JOB, text
 
 
 def _one_keyword_each(requirement: str) -> list:

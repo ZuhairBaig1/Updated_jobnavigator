@@ -5,21 +5,21 @@ bullet: the ones that serve the posting are rewritten and moved up, the rest sta
 Either way the code checks the model's reply against the base résumé, so the copy never says more than the base.
 
 This file holds the reply's format, the prompt and the steps that build the copy. The details of each step are in:
+  focused_tailor_matching.py        step 1: reading the reply's matching of the posting to the résumé
   focused_tailor_checks.py          whether the résumé states what a sentence claims
   focused_tailor_bullets.py         each role's bullets: checked, chosen, completed and swapped
   focused_tailor_summary_skills.py  the summary and the skills
   focused_tailor_keywords.py        the posting's spelling of each keyword
 """
 import json
-import re
 
 from backend.analyzer import resume_schema as rs
 from backend.analyzer.focused_tailor_basics import (BULLETS_OF_AN_EARLIER_ROLE, BULLETS_OF_THE_LATEST_ROLES, DUTY,
-                                                    MOST_WORDS_IN_A_KEYWORD, MUST_HAVE, NICE_TO_HAVE, _bullets_of,
-                                                    _projects, _roles)
+                                                    FROM_A_JOB, FROM_A_PROJECT, FROM_NOWHERE, FROM_THE_SKILLS,
+                                                    MUST_HAVE, NICE_TO_HAVE, _bullets_of, _projects, _roles)
 from backend.analyzer.focused_tailor_bullets import (_with_all_the_rest, bullets_a_role_gets, focused_bullets,
                                                      improved_by_swaps, the_most_important)
-from backend.analyzer.focused_tailor_checks import _KEYWORD_PARTS, _adds_words_to, _is_stated
+from backend.analyzer.focused_tailor_matching import other_names_allowed, requirements_matched
 from backend.analyzer.focused_tailor_keywords import (_respell_the_keywords, keywords_counted, keywords_of_the_posting,
                                                       with_the_postings_name_beside_the_resumes)
 from backend.analyzer.focused_tailor_summary_skills import complete_skills, focused_skills, focused_summary
@@ -57,6 +57,8 @@ def _schema_of_the_reply(keeps_everything: bool) -> dict:
         "requirements": rs._arr({"name": rs._STR,
                                  "kind": {"type": "string", "enum": [MUST_HAVE, NICE_TO_HAVE, DUTY]},
                                  "has": rs._BOOL,
+                                 "source": {"type": "string",
+                                            "enum": [FROM_A_JOB, FROM_A_PROJECT, FROM_THE_SKILLS, FROM_NOWHERE]},
                                  "by": rs._STR_LIST}),
         "same_thing_other_name": rs._arr({"posting_name": rs._STR, "resume_name": rs._STR}),
         "professional_summary": rs._STR,
@@ -94,8 +96,9 @@ STEP 1 - READ THE POSTING AND THE CONTACT LINE
 STEP 2 - MATCH THE RESUME TO IT
 - List in requirements every skill, tool, qualification and duty the posting names, one per entry. name is it in the posting's words (six words at most); kind is must (required), nice (preferred) or duty. One entry per skill: "Python, Pandas, and FastAPI" is three entries.
 - has says whether the resume has it anywhere: a bullet, the skills, the summary, the education or the dates.
-- by gives the one or two bullets of the resume that show it best, each written as role number, a dot, bullet number: "2.5" is bullet 5 of role 2. Leave by empty when no bullet shows it.
-- A requirement with an empty by never appears in a bullet you write.
+- source says where the resume shows it best: job when a bullet of a ROLE shows it, project when only a bullet of a PROJECT shows it, skills when only a SKILLS line lists it, none when none of them does.
+- by gives the one or two places in that source that show it, numbered as the resume below numbers them. For job, role number, a dot, bullet number: "2.5" is bullet 5 of role 2. For project, project number, a dot, bullet number: "1.3" is bullet 3 of project 1. For skills, the skills line number: "4". A place shows a requirement only when it names it or plainly describes doing it; never point at a place because it is about something related. Leave by empty when source is none.
+- A requirement whose source is not job never appears in a bullet you write for a role.
 - When the posting and the resume name the SAME thing differently, list the pair in same_thing_other_name and use the posting's name ("MSSQL" for "SQL Server").
 - A narrower or different thing is NOT the same thing: "GitHub" is not "GitHub Actions", "Kubernetes" is not "AKS", "JavaScript" is not "JavaScript ES6+". If unsure, treat the two as different.
 
@@ -136,7 +139,7 @@ _STEP_3_OF_A_FOCUSED_COPY = """STEP 3 - CHOOSE WHAT STAYS
 - These are the role's most important points for THIS posting: together they show as many of the posting's requirements and duties as the role truthfully can, the musts first. Prefer a point that states a number.
 - To fit more into so few bullets, write each one from two or three bullets of the role that belong together. Drop what serves nothing the posting asks for, however impressive.
 - The posting's duties count as much as its tools. Where a role shows the working practices the posting lists (reviews, team ceremonies, troubleshooting, documentation, working with other teams), one of its bullets gathers them, in the posting's wording.
-- Every must whose by is not empty is shown by at least one bullet you keep, and named in it in the posting's wording. Check each one before you finish.
+- Every must whose source is job is shown by at least one bullet you keep, and named in it in the posting's wording. Check each one before you finish.
 - When the resume lacks a must-have but shows a close relative of it (another framework of the same kind), keep the bullet that shows the relative, under its own name. Never rename it.
 - Order each role's bullets by how much they matter to this posting. The first bullets of the most recent role are read most: they show the posting's top must-haves.
 - Keep a project or a certification only when it shows something the posting asks for."""
@@ -145,7 +148,7 @@ _STEP_3_OF_A_COMPLETE_COPY = """STEP 3 - ARRANGE THE RESUME AROUND THE POSTING, 
 - Every bullet of every role and project stays in the resume. You decide which are rewritten and the order of all of them.
 - Lean the whole resume towards what the posting wants: rewrite (step 4) every bullet the posting's keywords or wording can honestly apply to. Every bullet you named in a by is one of them. Only a bullet with nothing in common with the posting stays as written.
 - In each role the rewritten bullets go first, the one that matters most to the posting at the top.
-- Every must whose by is not empty is shown by a rewritten bullet, and named in it in the posting's wording. Check each one before you finish.
+- Every must whose source is job is shown by a rewritten bullet, and named in it in the posting's wording. Check each one before you finish.
 - The first bullets of the most recent role are read most: they show the posting's top must-haves.
 - Bullets of the same role that say nearly the same thing may become one rewritten bullet: give all their numbers in from_bullets.
 - When the resume lacks a must-have but shows a close relative of it (another framework of the same kind), rewrite the bullet that shows the relative, under its own name. Never rename it.
@@ -195,8 +198,8 @@ def resume_as_numbered_text(base: dict) -> str:
              f"Contact line: {_contact_line(header)}",
              "", "SUMMARY", str(base.get("summary") or ""),
              "", "SKILLS"]
-    for label, value in (base.get("skills") or {}).items():
-        lines.append(f"{label}: {value}")
+    for line_number, (label, value) in enumerate((base.get("skills") or {}).items(), start=1):
+        lines.append(f"  {line_number}. {label}: {value}")
     for role_number, role in enumerate(_roles(base), start=1):
         lines += ["", f"ROLE {role_number}: {_facts_of_the_role(role)}"]
         lines += _numbered(role.get("bullets"))
@@ -250,7 +253,7 @@ def build_focused_resume(reply: dict, base: dict, jd_text: str = "", title_of_th
 
     # 1. The reply's matching: the posting's names it may use, and what the posting asks for with the bullets that show it
     other_names = other_names_allowed(reply, base_text, jd_text)
-    requirements = requirements_matched(reply, roles)
+    requirements = requirements_matched(reply, roles, _projects(base), len(base.get("skills") or {}))
 
     # 2. Each role's bullets, checked against the résumé, then chosen (focused) or completed (complete)
     bullets_of_each_role = _bullets_of_each_role(reply, roles, requirements, vocabulary, other_names, keeps_everything)
@@ -403,75 +406,3 @@ def _gaps(requirements: list) -> list:
 def _count_kept_as_written(bullets_of_each_role: list) -> int:
     """How many bullets are marked as the résumé's own sentence: put back, filled in or swapped in."""
     return sum(bullet["as_written"] for bullets in bullets_of_each_role for bullet in bullets)
-
-
-# ── Step 1: the reply's matching ────────────────────────────────────────────────
-
-# A reply's pointer at a bullet: "2.5" is bullet 5 of role 2.
-_ROLE_DOT_BULLET = re.compile(r"^\s*(\d+)\s*\.\s*(\d+)\s*$")
-
-
-def other_names_allowed(reply: dict, base_text: str, jd_text: str) -> dict:
-    """The posting's name for something the résumé names differently, as {posting name: résumé name}.
-
-    The model proposes each pair. One is kept only when the résumé states its own name, the posting states
-    the other, and the posting's name is not simply the résumé's with words added.
-    """
-    allowed = {}
-    for pair in (reply or {}).get("same_thing_other_name") or []:
-        if not isinstance(pair, dict):
-            continue
-        posting_name, resume_name = rs._text(pair.get("posting_name")), rs._text(pair.get("resume_name"))
-        if not posting_name or not resume_name or rs._squash(posting_name) == rs._squash(resume_name):
-            continue
-        if not _is_stated(resume_name, base_text) or not _is_stated(posting_name, jd_text):
-            continue
-        if _adds_words_to(posting_name, resume_name):
-            continue
-        allowed[posting_name] = resume_name
-    return allowed
-
-
-def requirements_matched(reply: dict, roles: list) -> list:
-    """The reply's matching of the posting to the résumé, one entry a keyword.
-
-    The reply writes each as {"name", "kind", "has", "by": ["role.bullet"]}; each comes back as
-    {"requirement", "importance", "shown_by": [(role number, bullet number)], "resume_has_it"}.
-    """
-    matched = []
-    for entry in (reply or {}).get("requirements") or []:
-        if not isinstance(entry, dict) or not rs._text(entry.get("name")):
-            continue
-        shown_by = _bullets_it_points_at(entry.get("by"), roles)
-        resume_has_it = bool(entry.get("has")) or bool(shown_by)
-        for name in _one_keyword_each(rs._text(entry["name"])):
-            matched.append({"requirement": name, "importance": entry.get("kind"),
-                            "shown_by": shown_by, "resume_has_it": resume_has_it})
-    return matched
-
-
-def _bullets_it_points_at(pointers, roles: list) -> list:
-    """The reply's "role.bullet" pointers as (role number, bullet number); one at a role or bullet the résumé lacks is dropped."""
-    pointed_at = []
-    for pointer in pointers or []:
-        written = _ROLE_DOT_BULLET.match(str(pointer))
-        if not written:
-            continue
-        role_number, bullet_number = int(written.group(1)), int(written.group(2))
-        role_exists = 1 <= role_number <= len(roles)
-        if role_exists and 1 <= bullet_number <= len(roles[role_number - 1].get("bullets") or []):
-            pointed_at.append((role_number, bullet_number))
-    return pointed_at
-
-
-def _one_keyword_each(requirement: str) -> list:
-    """A requirement naming several keywords as one ("Python, Pandas, and FastAPI"), taken apart into one each.
-
-    Otherwise a bullet naming Python would count as showing Pandas too.
-    """
-    parts = [part.strip(" .:") for part in _KEYWORD_PARTS.split(requirement)]
-    parts = [part for part in parts if part]
-    # Only a list of names is taken apart; "product managers, architects and QA teams" is one duty.
-    is_a_list_of_names = len(parts) >= 2 and all(
-        len(part.split()) <= MOST_WORDS_IN_A_KEYWORD and part != part.lower() for part in parts)
-    return parts if is_a_list_of_names else [requirement]

@@ -530,7 +530,8 @@ def test_a_summary_sentence_that_is_not_a_list_is_still_left_out_whole():
 def test_a_bullet_that_shows_a_requirement_is_written_as_role_dot_bullet():
     matched = focused.requirements_matched({"requirements": [{"name": "POSTGRES", "kind": "must", "has": True, "by": ["1.2", "9.1", "x"]}]},
                                            BASE["experience"])
-    assert matched == [{"requirement": "POSTGRES", "importance": "must", "shown_by": [(1, 2)], "resume_has_it": True}]
+    assert matched == [{"requirement": "POSTGRES", "importance": "must", "shown_by": [(1, 2)], "resume_has_it": True,
+                        "source": "job", "found_at": [(1, 2)]}]
 
 
 def test_a_bullet_that_names_a_must_is_credited_with_it_without_a_pointer():
@@ -647,3 +648,42 @@ def test_a_complete_copy_does_not_print_again_a_bullet_a_rewrite_already_says():
 def test_a_different_bullet_is_still_printed_in_a_complete_copy():
     copy = _complete(work_experience=[{"role_number": 1, "bullets": [_bullet("Followed TDD and wrote unit tests on every service.", 3)]}])
     assert "Organised the team's yearly offsite." in _bullets(copy, 1) and len(_bullets(copy, 1)) == 4
+
+
+# ── Where the résumé shows a requirement: a job, a project or the skills ───────
+
+PROJECTS = [{"name": "Recipe bot", "bullets": ["Built a RAG pipeline in LangChain.", "Indexed recipes in Cassandra."]}]
+
+
+def test_the_reply_says_where_each_requirement_is_shown():
+    requirement = focused.FOCUSED_JSON_SCHEMA["properties"]["requirements"]["items"]
+    assert requirement["properties"]["source"]["enum"] == ["job", "project", "skills", "none"]
+    assert "source" in requirement["required"]
+    prompt = focused.focused_prompt(BASE, POSTING)
+    assert "source says where the resume shows it best" in prompt
+    assert "  1. Languages: Python, JavaScript, SQL" in prompt and "  3. Tools: GitHub, Jenkins, TDD, Jira" in prompt
+
+
+def test_a_requirement_shown_in_a_project_points_at_the_project_and_credits_no_job_bullet():
+    matched = focused.requirements_matched(
+        {"requirements": [{"name": "LangChain", "kind": "must", "has": True, "source": "project", "by": ["1.1", "2.1"]}]},
+        BASE["experience"], PROJECTS, 3)
+    assert matched[0]["found_at"] == [(1, 1)] and matched[0]["shown_by"] == []
+    assert matched[0]["resume_has_it"]
+
+
+def test_a_requirement_only_in_the_skills_points_at_a_skills_line():
+    matched = focused.requirements_matched(
+        {"requirements": [{"name": "Redis", "kind": "nice", "has": False, "source": "skills", "by": ["2", "9", "1.3"]}]},
+        BASE["experience"], PROJECTS, 3)
+    assert matched[0]["found_at"] == [2] and matched[0]["shown_by"] == [] and matched[0]["resume_has_it"]
+
+
+def test_a_skill_from_the_skills_list_earns_no_points_for_a_job_bullet_about_something_related():
+    """Before, a requirement only in the skills had to point at some job bullet, and that bullet earned its points."""
+    from backend.analyzer.focused_tailor_bullets import _shown_by
+    matched = focused.requirements_matched(
+        {"requirements": [{"name": "Azure", "kind": "nice", "has": True, "source": "skills", "by": ["2"]}]},
+        BASE["experience"], PROJECTS, 3)
+    rewrite = {"text": "Supported a Redis cache used by the web team.", "from": [3], "as_written": False}
+    assert _shown_by(rewrite, 2, matched) == set()

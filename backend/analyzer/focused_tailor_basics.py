@@ -3,6 +3,9 @@
 # How much the posting wants a thing: it requires it, would like it, or lists it as part of the work.
 MUST_HAVE, NICE_TO_HAVE, DUTY = "must", "nice", "duty"
 
+# Where the résumé shows a requirement: a bullet of a job, a bullet of a project, a skills line, or nowhere.
+FROM_A_JOB, FROM_A_PROJECT, FROM_THE_SKILLS, FROM_NOWHERE = "job", "project", "skills", "none"
+
 # How many bullets a focused copy gives each role, most recent first: five, then four, then three for every earlier one.
 BULLETS_OF_THE_LATEST_ROLES = (5, 4)
 BULLETS_OF_AN_EARLIER_ROLE = 3

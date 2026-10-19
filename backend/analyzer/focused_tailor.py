@@ -19,8 +19,8 @@ from backend.analyzer.focused_tailor_basics import (BULLETS_OF_AN_EARLIER_ROLE, 
                                                     NICE_TO_HAVE, _bullets_of, _projects, _roles)
 from backend.analyzer.focused_tailor_bullets import (_with_all_the_rest, bullets_a_role_gets, focused_bullets,
                                                      improved_by_swaps, the_most_important)
-from backend.analyzer.focused_tailor_matching import (other_names_allowed, requirements_matched,
-                                                      requirements_met_in_the_copy)
+from backend.analyzer.focused_tailor_matching import (other_names_allowed, requirements_listed, requirements_matched,
+                                                      requirements_met_in_the_copy, with_the_lines_of_the_copy)
 from backend.analyzer.focused_tailor_keywords import (_respell_the_keywords, keywords_counted, keywords_of_the_posting,
                                                       with_the_postings_name_beside_the_resumes)
 from backend.analyzer.focused_tailor_summary_skills import complete_skills, focused_skills, focused_summary
@@ -321,8 +321,11 @@ def build_focused_resume(reply: dict, base: dict, jd_text: str = "", title_of_th
         "keywords": keywords_counted(copy, keywords),
     }
     if not keeps_everything:
-        # The reply's own check of what it wrote (step 5); its places point into the reply, before the checks above.
-        copy[REPORT_KEY]["requirements_met"] = requirements_met_in_the_copy(reply)
+        # What a Tailor + Jev ATS score reads (ats_score_tailor_jev.py): the posting's requirements as the reply listed
+        # them, and the reply's own check of what it wrote (step 5), each place found again among the copy's lines.
+        copy[REPORT_KEY]["requirements"] = requirements_listed(reply)
+        met = requirements_met_in_the_copy(reply)
+        copy[REPORT_KEY]["requirements_met"] = with_the_lines_of_the_copy(met, reply, base, copy)
     return copy
 
 

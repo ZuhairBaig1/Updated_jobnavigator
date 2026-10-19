@@ -739,4 +739,37 @@ def test_the_report_carries_what_the_copy_meets():
     report = focused.build_focused_resume(reply, BASE, POSTING)[focused.REPORT_KEY]
     assert report["requirements_met"][0]["requirement"] == "Python" and report["requirements_met"][0]["met"]
     complete_report = focused.build_focused_resume(_reply(), BASE, POSTING, keeps_everything=True)[focused.REPORT_KEY]
-    assert "requirements_met" not in complete_report
+    assert "requirements_met" not in complete_report and "requirements" not in complete_report
+
+
+# ── What a Tailor + Jev ATS score reads from a focused copy ────────────────────
+
+def test_a_focused_copy_keeps_the_requirement_list_and_the_lines_that_meet_each():
+    base = {**BASE, "projects": [{"name": "Recipe bot", "bullets": ["Built a RAG pipeline in LangChain."]},
+                                 {"name": "Chess app", "bullets": ["Wrote a chess engine in Python."]}]}
+    reply = _reply(
+        requirements=[{"name": "Python", "kind": "must", "has": True, "by": [_at("job", "1.1")]},
+                      {"name": "RAG", "kind": "nice", "has": True, "by": []},
+                      {"name": "", "kind": "must", "has": False, "by": []},
+                      {"name": "Kubernetes", "kind": "sometimes", "has": False, "by": []}],
+        projects=[{"project_number": 2, "bullets": [_bullet("Wrote a chess engine in Python.", 1)]}],
+        requirements_met=[{"name": "Python", "met": True,
+                           "by": [_at("job", "1.1"), _at("project", "2.1"), _at("skills", "1")]}])
+    report = focused.build_focused_resume(reply, base, POSTING)[focused.REPORT_KEY]
+    assert report["requirements"] == [{"name": "Python", "kind": "must"}, {"name": "RAG", "kind": "nice"}]
+    shown = report["requirements_met"][0]["shown_in"]
+    # The copy dropped project 1, so project 2 is found by its name, not its place.
+    assert shown[:2] == [{"where": "Senior Developer", "text": "Built REST APIs with Python and FastAPI for 40 internal teams."},
+                         {"where": "Chess app", "text": "Wrote a chess engine in Python."}]
+    assert shown[2]["where"] == "Skills" and shown[2]["text"].startswith("Core: ") and "Python" in shown[2]["text"]
+
+
+def test_a_place_the_checks_swapped_out_is_not_shown():
+    from backend.analyzer.focused_tailor_matching import with_the_lines_of_the_copy
+    met = [{"requirement": "Jenkins", "met": True, "found_at": {"job": [(2, 2), (2, 1)], "project": [], "skills": []}}]
+    copy = {"experience": [{"title": "Senior Developer", "bullets": []},
+                           {"title": "Developer", "bullets": ["Built deployment jobs in Jenkins.",
+                                                              "Supported a Redis cache used by the web team."]}]}
+    # Role 2's first bullet in the reply ("Maintained a SQL Server reporting database.") is not in the copy.
+    assert with_the_lines_of_the_copy(met, _reply(), BASE, copy)[0]["shown_in"] == [
+        {"where": "Developer", "text": "Built deployment jobs in Jenkins."}]

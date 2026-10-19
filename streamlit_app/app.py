@@ -271,6 +271,9 @@ def _show_time_taken(score: dict):
     seconds = score.get("_seconds")
     if seconds is None:
         return
+    if score.get("_with_the_tailoring"):
+        st.caption(f"⏱ Scored by Tailor + Jev as the tailoring finished, in {seconds:.1f} seconds")
+        return
     how = " — remembered from an earlier run of the same resume and posting" if score.get("remembered") else ""
     st.caption(f"⏱ Calculated in {seconds:.1f} seconds{how}")
 
@@ -329,11 +332,30 @@ WORDING_WORDS = {"exact": "Posting's term", "other": "Another name", "none": "No
 KIND_WORDS = {"must": "Must-have", "duty": "Duty", "nice": "Nice to have"}
 
 
-UNDER_TESTING = ("The Default and Fast (Jev) ATS scores are under testing and will most likely not perform well right now. "
-                 "Treat the score as a rough guide, not a verdict.")
-ATS_SCORERS = ("ats_default", "ats_fast_jev")
+UNDER_TESTING = ("The Default, Fast (Jev) and Tailor + Jev ATS scores are under testing and will most likely not perform "
+                 "well right now. Treat the score as a rough guide, not a verdict.")
+ATS_SCORERS = ("ats_default", "ats_fast_jev", "ats_tailor_jev")
 FORMAT_STATUS = {"pass": "✅", "warn": "⚠️", "fail": "❌"}
 KEYWORD_STATUS = {"found": "In the résumé", "other_name": "Another name (half credit)", "not_found": "Missing"}
+
+
+JUDGED_BY = {
+    "ats_default": "GPT-6 Luna judged every requirement; code checked every claim and matched the terms.",
+    "ats_fast_jev": "Jev judged every requirement; points are the expected value over its five levels.",
+    "ats_tailor_jev": "Jev judged every requirement the tailoring listed; points are the expected value over its five "
+                      "levels. Jev writes no reasons, so code wrote the issues below from its answers.",
+}
+
+
+def _show_issues(issues: list):
+    """Tailor + Jev: what the score found, each from one of its answers, with the line of the copy behind it."""
+    st.markdown("**What the score found**")
+    if not issues:
+        st.caption("Nothing: every must-have is shown in a role, and the experience, title and occupation fit.")
+    for issue in issues:
+        st.markdown(f"- {issue['issue']}")
+        for line in issue.get("shown_in") or []:
+            st.caption(f"  ↳ {line['where']}: {line['text']}")
 
 
 def _show_keyword_score(score: dict):
@@ -347,13 +369,12 @@ def _show_keyword_score(score: dict):
     keywords.metric("Posting's terms found", "—" if keyword_share is None else f"{100 * keyword_share:.0f}%")
     weights = score.get("weights") or {}
     st.caption("Score = " + ", ".join(f"{part} {100 * weight:.0f}%" for part, weight in weights.items())
-               + ", then × same occupation × must-haves kept. "
-               + ("Jev judged every requirement; points are the expected value over its five levels."
-                  if score.get("scorer") == "ats_fast_jev" else
-                  "GPT-6 Luna judged every requirement; code checked every claim and matched the terms."))
+               + ", then × same occupation × must-haves kept. " + JUDGED_BY.get(score.get("scorer"), ""))
     for warning in score.get("warnings") or []:
         st.warning(warning)
-    for missing in score.get("missing") or []:
+    if score.get("issues") is not None:
+        _show_issues(score["issues"])
+    for missing in [] if score.get("issues") is not None else score.get("missing") or []:
         st.error(f"Missing: {missing}")
     least = score.get("least_certain")
     if least:
@@ -392,7 +413,11 @@ def _show_keyword_score(score: dict):
     if removed:
         st.warning("Lines addressed to the scorer were left out: " + " | ".join(removed))
     timings = score.get("timings")
-    if timings:
+    if timings and "extract" not in timings:
+        st.caption(f"Stages: the requirement list came from the tailoring; Jev judged the overall questions "
+                   f"{timings['judge_overall']:.2f}s and the requirements {timings['judge_requirements']:.2f}s, in "
+                   f"parallel; total {timings['total']:.2f}s.")
+    elif timings:
         remembered = " (the posting's list was remembered)" if score.get("posting_remembered") else ""
         st.caption(f"Stages: list the requirements {timings['extract']:.2f}s{remembered}, judge the overall questions "
                    f"{timings['judge_overall']:.2f}s (in parallel), judge the requirements "
@@ -433,6 +458,17 @@ def _show_ats_score(score: dict):
                              "Credit", format="%d%%", min_value=0, max_value=100)})
 
 
+def _show_the_score_made_with_the_tailoring(resume_id: str):
+    """A focused copy's Tailor + Jev score, which the backend made as the tailoring finished, opened beside the copy.
+    The backend remembers it, so this returns at once; when it cannot be had, the ATS score box still works it out."""
+    try:
+        score = api.get_ats_score(resume_id, "", api.TAILOR_JEV_METHOD)
+    except api.BackendError:
+        return
+    st.session_state.ats_scores[resume_id] = {**score, "_seconds": score.get("seconds"), "_with_the_tailoring": True}
+    st.session_state[f"ats-method-{resume_id}"] = api.TAILOR_JEV_METHOD
+
+
 def _ats_score_panel(resume_id: str):
     """Work out and show the ATS score of the résumé on screen."""
     is_a_copy = _is_a_tailored_copy(resume_id)
@@ -444,11 +480,14 @@ def _ats_score_panel(resume_id: str):
             _sample_jd_picker(f"ats-jd-{resume_id}")
             job_description = st.text_area("Job description to score against", height=160,
                                            key=f"ats-jd-{resume_id}", placeholder="Paste the full posting here…")
-        method = st.radio("Scoring method", list(api.SCORING_METHODS), key=f"ats-method-{resume_id}", horizontal=True,
+        methods = [method for method in api.SCORING_METHODS if is_a_copy or method not in api.FOR_TAILORED_COPIES_ONLY]
+        method = st.radio("Scoring method", methods, key=f"ats-method-{resume_id}", horizontal=True,
                           help="Default: one GPT-6 Luna call judges every requirement; code checks its claims, "
                                "matches the posting's own search terms and adds up the score, with format checks "
                                "beside it. Fast (Jev): built for speed — a fast model lists the requirements and Jev "
-                               "judges them, on the same scale as Default.")
+                               "judges them, on the same scale as Default. Tailor + Jev (focused copies): Jev judges "
+                               "the requirements the tailoring listed, with no other model, and the issues it finds "
+                               "are listed in plain words.")
         st.warning(UNDER_TESTING)
         if st.button("Calculate ATS score", key=f"ats-go-{resume_id}", type="primary"):
             if not is_a_copy and not job_description.strip():
@@ -732,6 +771,8 @@ with left:
                                 for new_id in made:
                                     st.session_state.timings[new_id] = {
                                         "seconds": secs, "engine": _choice, "job": "Tailored"}
+                                    if api.TAILORING_WAYS.get(way, {}).get("mode") == "focused":
+                                        _show_the_score_made_with_the_tailoring(new_id)
                                 st.session_state.tailor_for = None
                                 st.session_state.open_copies |= {base_id}
                                 # Show the new copy straight away, as an import shows the résumé it made.

@@ -1137,6 +1137,15 @@ async def _tailor_impl(base_resume_id: str, job_id: str | None, job_description_
         finally:
             db.close()
 
+        # A focused copy is scored with Tailor + Jev the moment it is made, so its score is ready with it: the score
+        # route then finds it remembered. A failed score costs the copy nothing.
+        tailor_jev_score = None
+        if focused and not complete:
+            try:
+                tailor_jev_score = await _tailor_jev_score(tailored_id)
+            except Exception as error:
+                logger.warning(f"Tailor: no Tailor + Jev score for {tailored_id} ({type(error).__name__}: {error})")
+
         if chain_depth and job_id:
             try:
                 from backend.analyzer.cv_scorer import score_single_job
@@ -1160,6 +1169,7 @@ async def _tailor_impl(base_resume_id: str, job_id: str | None, job_description_
         logger.info(f"Tailor: created resume {tailored_id} for job {job_id}")
         # Returned string becomes JobRun.result_summary (Stats -> Run history).
         return (f"Created '{name}' - model replied in {llm_seconds:.1f}s"
+                + (f" - Tailor + Jev score {tailor_jev_score['ats_score']}" if tailor_jev_score else "")
                 + (f" - {chain_depth} score chained" if chain_depth and job_id else ""))
 
 
@@ -1913,6 +1923,9 @@ ATS_SCORER = "jev"
 RUBRIC_SCORER = "rubric"
 ATS_DEFAULT_SCORER = "ats_default"            # Default: GPT-6 Luna + keyword match
 ATS_FAST_JEV_SCORER = "ats_fast_jev"    # Fast (Jev): built for speed, a fast extractor + Jev
+ATS_TAILOR_JEV_SCORER = "ats_tailor_jev"    # Tailor + Jev: a focused copy's own requirement list, judged by Jev
+NOT_A_NEW_FOCUSED_COPY = ("Tailor + Jev scores a focused copy tailored since 19 Oct 2026, against the posting it was "
+                          "tailored for. Tailor one in focused mode, or choose Default or Fast (Jev).")
 OPENROUTER = "openrouter"
 OPENROUTER_CREDITS_URL = "https://openrouter.ai/api/v1/credits"
 OUT_OF_CREDIT_MESSAGE = ("The OpenRouter account is out of credit, so this scoring method cannot run. "
@@ -1941,6 +1954,32 @@ def _resume_text_and_its_job_description(resume_id: str) -> tuple:
         db.close()
 
 
+def _focused_report_and_target_title(resume_id: str) -> tuple:
+    """The report a focused copy keeps beside it ({} when it is not one) and the posting's title it was tailored to."""
+    from backend.analyzer.focused_tailor import REPORT_KEY
+    db = SessionLocal()
+    try:
+        resume = db.query(Resume).filter(Resume.id == resume_id).first()
+        json_data = (resume.json_data or {}) if resume else {}
+        header = json_data.get("header") if isinstance(json_data.get("header"), dict) else {}
+        return json_data.get(REPORT_KEY) or {}, str(header.get("target_title") or "")
+    finally:
+        db.close()
+
+
+async def _tailor_jev_score(resume_id: str, asked_for: str = "") -> dict | None:
+    """Tailor + Jev's score of a focused copy against the posting it was tailored for, the same whether the score
+    route asks for it or the tailoring run does the moment the copy is made; None when Jev cannot be reached."""
+    from backend.analyzer import ats_score_tailor_jev
+    resume_text, title_lines, saved_job_description = _resume_text_and_its_job_description(resume_id)
+    report, target_title = _focused_report_and_target_title(resume_id)
+    # The tailoring's list is the list of the posting it was tailored for, so no other posting can be scored with it.
+    if not report.get("requirements") or not saved_job_description or (asked_for and asked_for != saved_job_description):
+        raise HTTPException(status_code=400, detail=NOT_A_NEW_FOCUSED_COPY)
+    return await ats_score_tailor_jev.ats_score(resume_text, saved_job_description, report, title_lines,
+                                                posting_title=target_title)
+
+
 @router.post("/{resume_id}/ats-score")
 async def ats_score_of_a_resume(resume_id: str, request_body: dict = None):
     """The ATS score of one résumé against a job description, with the requirement lines behind it.
@@ -1951,13 +1990,16 @@ async def ats_score_of_a_resume(resume_id: str, request_body: dict = None):
     {"scorer": "ats_default"} is Default, the app's default (ats_score_default.ats_score): GPT-6 Luna judges every requirement into
     categories and code matches the posting's own search terms; {"model": ...} picks one of
     rubric_ats_score.MODELS, Luna by default. {"scorer": "ats_fast_jev"} (ats_score_fast_jev.ats_score) is built for
-    speed: a fast model lists the requirements and Jev judges them; it takes no "model". {"scorer": "rubric"}
+    speed: a fast model lists the requirements and Jev judges them; it takes no "model". {"scorer": "ats_tailor_jev"}
+    (ats_score_tailor_jev.ats_score) scores a focused copy against the posting it was tailored for: Jev judges the
+    requirements its tailoring listed, and the reply adds the issues in plain words. {"scorer": "rubric"}
     is the original rubric scorer (rubric_ats_score.ats_score), on the model named by {"model": ...}.
     """
     from backend.analyzer import ats_score_default, ats_score_fast_jev, line_match, rubric_ats_score
 
     resume_text, title_lines, saved_job_description = _resume_text_and_its_job_description(resume_id)
-    job_description = str((request_body or {}).get("job_description") or "").strip() or saved_job_description
+    asked_for = str((request_body or {}).get("job_description") or "").strip()
+    job_description = asked_for or saved_job_description
     if not job_description:
         raise HTTPException(status_code=400, detail="Paste a job description to score this resume against")
     if len(resume_text) < 50:
@@ -1965,7 +2007,9 @@ async def ats_score_of_a_resume(resume_id: str, request_body: dict = None):
 
     provider = OPENROUTER
     scorer = (request_body or {}).get("scorer")
-    if scorer == ATS_FAST_JEV_SCORER:
+    if scorer == ATS_TAILOR_JEV_SCORER:
+        result = await _tailor_jev_score(resume_id, asked_for)
+    elif scorer == ATS_FAST_JEV_SCORER:
         try:
             result = await ats_score_fast_jev.ats_score(resume_text, job_description, title_lines)
         except NonRetryableLLMError as error:

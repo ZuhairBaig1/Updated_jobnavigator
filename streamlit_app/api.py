@@ -132,13 +132,18 @@ def start_tailoring(base_resume_id: str, job_description: str, way: str = "") ->
 
 
 # The ways of scoring the toggle offers: what the backend is asked for, and what the user is told.
+# Tailor + Jev also scores every focused copy the moment its tailoring finishes.
+TAILOR_JEV_METHOD = "Tailor + Jev — focused copies, with the issues"
 SCORING_METHODS = {
     # Default first, so it is the default: GPT-6 Luna judges every requirement, code matches the posting's own
     # search terms. Fast (Jev) is built for speed: a fast model lists the requirements and Jev judges them. The backend
     # still serves the original rubric scorer ("rubric").
     "Default — GPT-6 Luna + keyword match": {"scorer": "ats_default", "model": "luna"},
     "Fast (Jev) — Jev + keyword match": {"scorer": "ats_fast_jev"},
+    TAILOR_JEV_METHOD: {"scorer": "ats_tailor_jev"},
 }
+# Offered only for a tailored copy: they read what its tailoring kept beside it.
+FOR_TAILORED_COPIES_ONLY = (TAILOR_JEV_METHOD,)
 
 
 def get_ats_score(resume_id: str, job_description: str = "", method: str = "") -> dict:

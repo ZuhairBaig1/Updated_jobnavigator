@@ -78,6 +78,12 @@ def get_shelf() -> dict:
     return _get("/api/resumes/shelf").json()
 
 
+def get_model_reply(resume_id: str) -> dict | None:
+    """The exact JSON the model replied with when this résumé was made (the parser's for an imported one, the
+    tailor's for a copy), with who replied and how fast; None for one made before the backend kept it."""
+    return _get(f"/api/resumes/{resume_id}").json().get("model_reply")
+
+
 def get_preview_html(resume_id: str, template: str = "word") -> str:
     """One résumé rendered to HTML.
 

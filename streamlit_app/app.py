@@ -13,6 +13,8 @@ import time
 
 import base64
 
+import json
+
 from pathlib import Path
 
 import streamlit as st
@@ -73,6 +75,42 @@ def _pdf_bytes(resume_id: str, template: str, _stamp: str):
     last-changed time, so editing one invalidates its entry instead of serving the old file.
     """
     return api.get_pdf(resume_id, template)
+
+
+@st.cache_data(show_spinner=False, max_entries=32)
+def _model_reply_of(resume_id: str):
+    """The model's reply a résumé was made from. It is written once, when the résumé is made, so one fetch per
+    résumé is enough."""
+    return api.get_model_reply(resume_id)
+
+
+MADE_BY = {"parser": "The parser", "tailor": "The tailoring"}
+
+
+def _show_the_model_reply(resume_id: str):
+    """Below the résumé: the complete JSON the parser (for an imported résumé) or the tailor (for a copy) replied
+    with, exactly as the model wrote it, before the app checked it and built the résumé from it."""
+    st.divider()
+    try:
+        kept = _model_reply_of(resume_id)
+    except api.BackendError as e:
+        st.subheader("Model output")
+        st.warning(f"Could not load the model's output: {e}")
+        return
+    if not kept:
+        st.subheader("Model output")
+        st.caption("This résumé was made before the app kept the model's output. Import or tailor it again to see it.")
+        return
+    mode = f" ({kept['mode']})" if kept.get("mode") else ""
+    st.subheader(f"Model output — {kept.get('step', 'model')}{mode}")
+    st.caption(f"{MADE_BY.get(kept.get('step'), 'The model')}'s complete JSON, exactly as {kept.get('model', 'the model')} "
+               f"returned it, before the app checked it and built the résumé above from it · "
+               f"{kept.get('seconds', 0):.1f}s · {kept.get('input_tokens', 0):,} tokens in, "
+               f"{kept.get('output_tokens', 0):,} out")
+    text = json.dumps(kept.get("reply"), indent=2, ensure_ascii=False)
+    st.code(text, language="json", height=600)
+    st.download_button("⬇ Download this JSON", data=text, file_name=f"model-output-{kept.get('step', 'model')}.json",
+                       mime="application/json", key=f"model-reply-{resume_id}")
 
 
 def _render_document(html: str, height: int = 1150):
@@ -823,3 +861,5 @@ with right:
             st.error(str(e))
         else:
             _render_document(html)
+
+        _show_the_model_reply(selected)

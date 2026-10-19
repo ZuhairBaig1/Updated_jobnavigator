@@ -524,7 +524,18 @@ def _resume_to_dict(r: Resume, include_json_data: bool = False) -> dict:
     }
     if include_json_data:
         d["json_data"] = r.json_data or {}
+        d["model_reply"] = r.model_reply
     return d
+
+
+def _model_reply(step: str, tracker, response: dict, seconds: float, reply: dict, **about) -> dict:
+    """The exact JSON a model replied with, copied before anything processes it, with who replied and how fast: what
+    Resume.model_reply keeps so the app can show the reply as the model gave it."""
+    usage = response.get("usage") or {}
+    tokens_in = sum(usage.get(key, 0) or 0 for key in ("input_tokens", "cache_read_tokens", "cache_write_tokens"))
+    return {"step": step, **about, "provider": tracker.provider, "model": tracker.model, "seconds": round(seconds, 1),
+            "input_tokens": tokens_in, "output_tokens": usage.get("output_tokens", 0) or 0,
+            "reply": json.loads(json.dumps(reply))}
 
 
 # ── Template listing ────────────────────────────────────────────────────────
@@ -1051,7 +1062,7 @@ async def _tailor_impl(base_resume_id: str, job_id: str | None, job_description_
         # answered in prose this once — a bullet that reads like an instruction
         # has it explain itself instead of tailoring. Ask once more, saying
         # plainly that only the object is wanted, before giving up on the run.
-        llm_result = None
+        llm_result = model_reply = None
         llm_seconds = 0.0   # model time across both attempts, reported in the run summary
         for attempt in (1, 2):
             attempt_prompt = prompt if attempt == 1 else prompt + "\n\n" + _JSON_ONLY_NUDGE
@@ -1087,6 +1098,7 @@ async def _tailor_impl(base_resume_id: str, job_id: str | None, job_description_
 
             try:
                 llm_result = parse_model_json(raw)
+                model_reply = _model_reply("tailor", _tracker, _resp, elapsed, llm_result, mode=mode or "full")
                 break
             except _json.JSONDecodeError as e:
                 logger.error(f"Tailor JSON parse failed (attempt {attempt}/2): {e}. Raw: {raw[:500]}")
@@ -1127,6 +1139,7 @@ async def _tailor_impl(base_resume_id: str, job_id: str | None, job_description_
                 template=base_template,
                 page_format=base_page_format,
                 json_data=tailored_data,
+                model_reply=model_reply,
             )
             db.add(tailored)
             db.commit()
@@ -1539,8 +1552,8 @@ def _input_note() -> str:
 
 
 async def _parse_llm(system_prompt: str, user_prompt: str, schema: dict, schema_name: str,
-                     db: Session) -> dict:
-    """One parser call through the ladder on the résumé-import model (`parse_llm_*`, else the primary) under PARSE_LLM_TIMEOUT, returning the reply's JSON object; raises 422 for invalid JSON, 504 on the deadline and 500 if the call itself fails.
+                     db: Session, keep_reply: dict | None = None) -> dict:
+    """One parser call through the ladder on the résumé-import model (`parse_llm_*`, else the primary) under PARSE_LLM_TIMEOUT, returning the reply's JSON object; raises 422 for invalid JSON, 504 on the deadline and 500 if the call itself fails. A keep_reply dict is filled with the exact reply and who gave it (_model_reply).
 
     Structuring is transcription, not deliberation, so a reasoning model is asked to skip
     it: measured on this résumé, flash answered the same in 8s and 2.7k tokens instead of
@@ -1563,15 +1576,19 @@ async def _parse_llm(system_prompt: str, user_prompt: str, schema: dict, schema_
                                    reasoning=False)
             _tracker.record(_resp)
             raw_response = _resp["text"]
+        seconds = time.monotonic() - started
         usage = _resp.get("usage") or {}
         logger.info(f"PDF import: {_tracker.provider}/{_tracker.model} replied in "
-                    f"{time.monotonic() - started:.1f}s ({usage.get('output_tokens', 0)} output tokens)")
+                    f"{seconds:.1f}s ({usage.get('output_tokens', 0)} output tokens)")
 
         try:
-            return _parse_model_json(raw_response)
+            reply = _parse_model_json(raw_response)
         except json.JSONDecodeError as e:
             logger.error(f"LLM returned invalid JSON for PDF import: {e}\nRaw: {raw_response[:500]}")
             raise HTTPException(status_code=422, detail="LLM returned invalid JSON. Try again or enter data manually.")
+        if keep_reply is not None:
+            keep_reply.update(_model_reply("parser", _tracker, _resp, seconds, reply))
+        return reply
     except HTTPException:
         raise
     except LLMTimeoutError as e:
@@ -1740,11 +1757,11 @@ def _base_resume_prompt(extracted_text: str) -> str:
     )
 
 
-async def structure_base_resume_pdf(pdf_bytes: bytes, db: Session) -> dict:
-    """PDF bytes → an ATS-friendly base résumé: the base knowledge base's seven sections only, in order, restructured by its rules without inventing anything; the résumé-shelf import. Raises like parse_resume_pdf."""
+async def structure_base_resume_pdf(pdf_bytes: bytes, db: Session, keep_reply: dict | None = None) -> dict:
+    """PDF bytes → an ATS-friendly base résumé: the base knowledge base's seven sections only, in order, restructured by its rules without inventing anything; the résumé-shelf import. Raises like parse_resume_pdf. A keep_reply dict is filled with the parser's exact reply."""
     extracted_text = await _extract_pdf_text(pdf_bytes)
     reply = await _parse_llm(_BASE_SYSTEM_PROMPT, _base_resume_prompt(extracted_text),
-                             BASE_RESUME_JSON_SCHEMA, BASE_SCHEMA_NAME, db)
+                             BASE_RESUME_JSON_SCHEMA, BASE_SCHEMA_NAME, db, keep_reply=keep_reply)
     structured = build_base_resume(reply)
 
     # Flag only: the document is the pool, so a term lost here can never be recovered by
@@ -1764,7 +1781,8 @@ async def import_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)
     pdf_bytes = await file.read()
     check_pdf_size(pdf_bytes)
 
-    json_data = await structure_base_resume_pdf(pdf_bytes, db)
+    model_reply = {}
+    json_data = await structure_base_resume_pdf(pdf_bytes, db, keep_reply=model_reply)
 
     name = file.filename.rsplit(".", 1)[0] if "." in file.filename else file.filename
     resume = Resume(
@@ -1773,6 +1791,7 @@ async def import_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)
         template=_default_template_id(),
         page_format="letter",
         json_data=json_data,
+        model_reply=model_reply or None,
     )
     db.add(resume)
     db.commit()

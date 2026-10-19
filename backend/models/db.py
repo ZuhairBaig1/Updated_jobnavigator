@@ -476,6 +476,10 @@ class Resume(Base):
     template = Column(String, default=lambda: first_template("resume_templates"))
     page_format = Column(String, default="letter")
     json_data = Column(JSON, default={})
+    # The exact JSON the model replied with when this résumé was made (the parser for an imported one, the tailor for
+    # a copy), with who replied and how fast. Kept apart from json_data, which the tailor and the scorers read whole,
+    # so nothing can take the reply for résumé content.
+    model_reply = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -649,4 +653,5 @@ def create_tables():
         conn.execute(text(
             "ALTER TABLE searches ADD COLUMN IF NOT EXISTS exclude_active_companies BOOLEAN DEFAULT FALSE"
         ))
+        conn.execute(text("ALTER TABLE resumes ADD COLUMN IF NOT EXISTS model_reply JSON"))
         conn.commit()

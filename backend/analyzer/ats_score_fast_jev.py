@@ -258,9 +258,9 @@ def requirement_questions(requirements: list) -> dict:
     return questions
 
 
-async def ask_jev(state: str, questions: dict) -> dict | None:
+async def ask_jev(state: str, questions: dict, purpose: str = "ats_score_fast_jev") -> dict | None:
     """{"answers", "input_tokens", "seconds", "model"} for all the questions, in parallel requests of at most
-    MOST_QUESTIONS_PER_REQUEST, or None when Jev cannot be reached."""
+    MOST_QUESTIONS_PER_REQUEST, or None when Jev cannot be reached. `purpose` names the call in the call log."""
     started = time.monotonic()
     if not questions:
         return {"answers": {}, "input_tokens": 0, "seconds": 0.0, "model": JEV_GATEWAY["model"]}
@@ -283,7 +283,7 @@ async def ask_jev(state: str, questions: dict) -> dict | None:
         input_tokens += (reply.get("usage") or {}).get("input_tokens", 0) or 0
         model = reply.get("model") or model
     seconds = round(time.monotonic() - started, 2)
-    log_llm_call("ats_score_fast_jev", route["provider"], route["model"],
+    log_llm_call(purpose, route["provider"], route["model"],
                  {"input_tokens": input_tokens, "output_tokens": 0}, duration_ms=int(1000 * seconds))
     return {"answers": answers, "input_tokens": input_tokens, "seconds": seconds, "model": model}
 

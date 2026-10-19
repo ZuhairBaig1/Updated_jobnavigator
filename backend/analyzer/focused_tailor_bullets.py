@@ -1,17 +1,18 @@
 """Each role's bullets in a focused or complete copy: checked against the résumé, then chosen, swapped or completed.
 
 1. Every rewritten bullet is checked against its own role (step 2 of build_focused_resume).
-2. A focused copy keeps a set number of bullets a role, the ones that show the most of the posting.
+2. A focused copy keeps a set number of bullets a role. The model writes exactly that many and chooses them itself;
+   the choosing here only acts when a role ends up with too few (the role's own bullets fill in) or too many.
 3. A complete copy keeps every other bullet of the role below the rewritten ones.
-4. A focused copy then swaps in résumé bullets where that shows more of the posting (step 4).
+4. A focused copy then swaps in a résumé bullet for each must-have the résumé's bullets name and no bullet of the copy
+   does (step 4). Nothing else is swapped: the model's choice stands.
 """
 import difflib
 import logging
 import re
 
 from backend.analyzer import resume_schema as rs
-from backend.analyzer.focused_tailor_basics import (BULLETS_OF_AN_EARLIER_ROLE, BULLETS_OF_THE_LATEST_ROLES, MUST_HAVE,
-                                                    _bullets_of)
+from backend.analyzer.focused_tailor_basics import BULLETS_OF_AN_EARLIER_ROLE, BULLETS_OF_THE_LATEST_ROLES, MUST_HAVE
 from backend.analyzer.focused_tailor_checks import (_WORD, _names_the_requirement, _with_the_unsupported_items_taken_out,
                                                     _word_stem, unsupported_in)
 
@@ -30,8 +31,6 @@ WORTH_OF_A_MEASURED_RESULT = 2
 # A measured result: a percentage (40%), an amount of money ($2M) or a multiple (3x).
 _A_MEASURED_RESULT = re.compile(r"\d+(?:\.\d+)?\s*%|[$€£]\s?\d|\b\d+(?:\.\d+)?x\b")
 
-# Swaps after the must-haves are in: at most one a role.
-MOST_SWAPS_IN_A_ROLE = 1
 # A role's first bullets are the ones read, and the reply put its strongest there, so a swap never takes their place.
 BULLETS_NEVER_SWAPPED_OUT = 2
 
@@ -149,15 +148,14 @@ def bullets_a_role_gets(role_number: int) -> int:
 def the_most_important(bullets: list, base_bullets: list, how_many: int, role_number: int, requirements: list) -> list:
     """Exactly `how_many` bullets for a role (fewer only when the résumé has fewer), in the order they stood.
 
-    The reply's own bullets come first. When it wrote too many, they are picked one at a time, each time the one
-    worth the most for what no picked bullet shows yet. When it wrote too few, they all stay and the role's
-    unused bullets fill the gap the same way, as the résumé wrote them.
+    The model chooses: when it wrote too many, its first ones stay, since it puts the ones that matter most first.
+    When it wrote too few, they all stay and the role's unused bullets fill the gap, picked one at a time, each time
+    the one worth the most for what no picked bullet shows yet, as the résumé wrote them.
     """
-    candidates = list(bullets)
-    if len(bullets) < how_many:
-        candidates += _unused_bullets_of_the_role(bullets, base_bullets)
-    # When the reply did not write too many, all its bullets stay.
-    picked = list(range(len(bullets))) if len(bullets) <= how_many else []
+    if len(bullets) >= how_many:
+        return list(bullets[:how_many])
+    candidates = list(bullets) + _unused_bullets_of_the_role(bullets, base_bullets)
+    picked = list(range(len(bullets)))
     already_shown = set()
     for position in picked:
         already_shown |= _shown_by(candidates[position], role_number, requirements)
@@ -263,33 +261,15 @@ def _content_words(text: str) -> set:
     return {word.lower().rstrip("s") for word in re.findall(r"[A-Za-z][A-Za-z0-9+#.]{3,}", text or "")}
 
 
-# ── 4. A focused copy: swapping in résumé bullets ───────────────────────────────
+# ── 4. A focused copy: the must-haves the model left out ────────────────────────
 
-def improved_by_swaps(bullets_of_each_role: list, roles: list, requirements: list) -> int:
-    """Swaps résumé bullets into the chosen ones where that makes the copy show more of the posting.
-
-    First every must-have no chosen bullet names; then at most MOST_SWAPS_IN_A_ROLE more a role, each only when it
-    adds points. Never in place of a role's first bullets. A bullet swapped in prints as the résumé wrote it.
-    Changes bullets_of_each_role in place and returns how many bullets it swapped.
-    """
-    swapped = _swap_in_the_missing_musts(bullets_of_each_role, roles, requirements)
-    for role_number, role in enumerate(roles, start=1):
-        chosen = bullets_of_each_role[role_number - 1]
-        base_bullets = _bullets_of(role)
-        for _ in range(MOST_SWAPS_IN_A_ROLE):
-            swap = _best_swap(bullets_of_each_role, role_number, base_bullets, requirements)
-            if swap is None:
-                break
-            chosen[swap["slot"]] = swap["bullet"]
-            swapped += 1
-    return swapped
-
-
-def _swap_in_the_missing_musts(bullets_of_each_role: list, roles: list, requirements: list) -> int:
+def swapped_in_for_missing_musts(bullets_of_each_role: list, roles: list, requirements: list) -> int:
     """For each must-have no chosen bullet names, swaps in a résumé bullet that names it, as written; returns how many.
 
-    The most recent role with such a bullet takes it, in the slot whose loss costs the copy the fewest points.
-    A screener counts a core skill only when a role shows it, so this is not limited to one swap a role.
+    The safety net under the model's own choice: it acts only on a must-have the résumé's bullets name word for word.
+    The most recent role with such a bullet takes it, in the slot whose loss costs the copy the fewest points, never in
+    place of a role's first bullets. A screener counts a core skill only when a role shows it, so this is not limited to
+    one swap a role. Changes bullets_of_each_role in place.
     """
     swapped = 0
     for requirement in requirements:
@@ -334,26 +314,6 @@ def _cheapest_slot_to_give_up(bullets_of_each_role: list, role_number: int, new_
         if cheapest is None or loss <= cheapest_loss:
             cheapest, cheapest_loss = slot, loss
     return cheapest
-
-
-def _best_swap(bullets_of_each_role: list, role_number: int, base_bullets: list, requirements: list) -> dict | None:
-    """The swap of an unused résumé bullet into the role (never into its first bullets) that adds the most points,
-    as {"slot", "bullet"}; on a tie the earlier bullet and slot. None when no swap adds any."""
-    chosen = bullets_of_each_role[role_number - 1]
-    points_now = _points_of_the_copy(bullets_of_each_role, requirements)
-    used = {number for bullet in chosen for number in bullet["from"]}
-    chosen_texts = [bullet["text"] for bullet in chosen]
-    best_swap, best_gain = None, 0
-    for number, text in enumerate(base_bullets, start=1):
-        if number in used or text in chosen_texts:
-            continue
-        new_bullet = {"text": text, "from": [number], "as_written": True}
-        for slot in range(BULLETS_NEVER_SWAPPED_OUT, len(chosen)):
-            after_the_swap = _with_a_swap(bullets_of_each_role, role_number, slot, new_bullet)
-            gain = _points_of_the_copy(after_the_swap, requirements) - points_now
-            if gain > best_gain:
-                best_swap, best_gain = {"slot": slot, "bullet": new_bullet}, gain
-    return best_swap
 
 
 def _with_a_swap(bullets_of_each_role: list, role_number: int, slot: int, new_bullet: dict) -> list:

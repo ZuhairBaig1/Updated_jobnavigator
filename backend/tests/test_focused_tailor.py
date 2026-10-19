@@ -270,36 +270,9 @@ def test_a_role_given_too_few_bullets_is_filled_from_the_resume():
     assert len(_bullets(copy, 1)) == 5 and "Built service 3 in Python." in _bullets(copy, 1)
 
 
-def test_when_the_reply_wrote_too_many_the_one_that_shows_a_must_is_kept():
-    requirements = [{"name": "Redis", "kind": "must", "by": ["1.7"]}]
-    copy = focused.build_focused_resume(_reply(requirements=requirements, work_experience=_written(1, 2, 3, 4, 5, 6, 7)), LONG, POSTING)
-    assert "Built service 7 in Python." in _bullets(copy, 1) and "Built service 5 in Python." not in _bullets(copy, 1)
-
-
-def test_a_must_counts_for_more_than_a_duty_when_choosing():
-    requirements = [{"name": "Daily stand-ups with the team", "kind": "duty", "by": ["1.6"]}, {"name": "Redis", "kind": "must", "by": ["1.7"]}]
-    copy = focused.build_focused_resume(_reply(requirements=requirements, work_experience=_written(1, 2, 3, 4, 6, 7)), LONG, POSTING)
-    assert {"Built service 6 in Python.", "Built service 7 in Python."} <= set(_bullets(copy, 1))
-    assert "Built service 4 in Python." not in _bullets(copy, 1)
-
-
 def test_the_replys_own_bullets_are_not_traded_for_the_resumes_when_it_wrote_the_right_number():
     copy = focused.build_focused_resume(_reply(work_experience=_written(4, 5, 6, 7, 8)), LONG, POSTING)
     assert _bullets(copy, 1) == [f"Built service {n} in Python." for n in (4, 5, 6, 7, 8)]
-
-
-def test_the_bullets_kept_stay_in_the_order_they_stood_in():
-    requirements = [{"name": "Redis", "kind": "must", "by": ["1.7"]}]
-    copy = focused.build_focused_resume(_reply(requirements=requirements, work_experience=_written(1, 2, 3, 4, 5, 6, 7)), LONG, POSTING)
-    assert _bullets(copy, 1) == [f"Built service {n} in Python." for n in (1, 2, 3, 4, 7)]
-
-
-def test_a_bullet_with_a_measured_result_is_preferred_when_cutting():
-    roles = [{"role_number": 1, "bullets": [_bullet(f"Built service {n} in Python.", n) for n in range(1, 6)]
-              + [_bullet("Cut run time by 30% in Python.", 6)]}]
-    long = _long_with(6, "Cut run time by 30% with Python.")
-    copy = focused.build_focused_resume(_reply(work_experience=roles), long, POSTING)
-    assert "Cut run time by 30% in Python." in _bullets(copy, 1) and len(_bullets(copy, 1)) == 5
 
 
 def test_a_must_no_chosen_bullet_shows_is_swapped_in_as_the_resume_wrote_it():
@@ -562,14 +535,13 @@ def test_a_roles_opening_bullets_are_never_swapped_out():
     assert _bullets(copy, 1)[:2] == ["Built service 1 in Python.", "Built service 2 in Python."]
 
 
-def test_no_more_than_the_allowed_number_of_bullets_is_swapped_in_a_role():
+def test_a_nice_to_have_is_never_swapped_in_over_the_models_choice():
     first = LONG["experience"][0]
     bullets = first["bullets"][:5] + ["Used Redis.", "Used Kafka.", "Used Docker."]
     long = {**LONG, "experience": [{**first, "bullets": bullets}] + LONG["experience"][1:]}
-    # nice-to-haves: only a must may take more swaps than this
-    requirements = [{"name": name, "kind": "nice", "has": True, "by": []} for name in ("Redis", "Kafka", "Docker")]
+    requirements = [{"name": name, "kind": "nice", "has": True} for name in ("Redis", "Kafka", "Docker")]
     copy = focused.build_focused_resume(_reply(requirements=requirements, work_experience=_written(1, 2, 3, 4, 5)), long, POSTING)
-    assert copy[focused.REPORT_KEY]["bullets_swapped_in"] == focused.MOST_SWAPS_IN_A_ROLE
+    assert copy[focused.REPORT_KEY]["bullets_swapped_in"] == 0
 
 
 def test_a_bullet_naming_one_keyword_of_a_longer_requirement_is_credited_with_it():
@@ -632,6 +604,35 @@ def test_a_section_heading_offered_as_the_title_is_refused():
     assert "target_title" not in header and header["title"] == "Backend Developer"
 
 
+def test_the_gap_report_leaves_out_what_the_copy_shows_or_the_skills_list_names():
+    base = {**BASE, "experience": [{**BASE["experience"][0],
+                                    "bullets": BASE["experience"][0]["bullets"] + ["Built a ReAct agent loop."]}]
+            + BASE["experience"][1:]}
+    reply = _reply(requirements=[{"name": "MSSQL", "kind": "must", "has": False, "by": []},          # skills: SQL Server
+                                 {"name": "Kafka", "kind": "must", "has": False, "by": []},          # a real gap
+                                 {"name": "FastAPI", "kind": "must", "has": False, "by": []},        # the copy shows it
+                                 {"name": "React.js", "kind": "nice", "has": False, "by": []},       # only "ReAct"
+                                 {"name": "Code reviews", "kind": "duty", "has": False, "by": []}],  # a duty: never a gap
+                   requirements_met=[{"name": "FastAPI", "met": True, "by": [_at("job", "1.1")]},
+                                     {"name": "Kafka", "met": False, "by": []}])
+    assert focused.build_focused_resume(reply, base, POSTING)[focused.REPORT_KEY]["not_supported"] == ["Kafka", "React.js"]
+    # A complete copy has no requirements_met: only its skills list is read, which does not name FastAPI.
+    complete = focused.build_focused_resume(reply, base, POSTING, keeps_everything=True)[focused.REPORT_KEY]
+    assert complete["not_supported"] == ["Kafka", "FastAPI", "React.js"]
+
+
+def test_the_resume_is_told_never_to_say_what_the_candidate_lacks():
+    assert "the resume never says what the candidate lacks" in focused.FOCUSED_SYSTEM_PROMPT
+    assert "recorded only in your requirements list, never in the resume" in focused.FOCUSED_SYSTEM_PROMPT
+
+
+def test_the_title_is_asked_for_from_the_postings_heading_only():
+    prompt = focused.focused_prompt(BASE, POSTING)
+    assert "taken only from its heading" in prompt and '"Position:"' in prompt
+    assert "Never take it from a sentence in the body" in prompt and 'never from a job board\'s "Role:"' in prompt
+    assert "Leave target_job_title empty when the posting has no title heading" in prompt
+
+
 def test_a_title_named_in_the_text_is_accepted():
     posting = "Summary\nWe are looking for a Senior Python Backend Engineer.\nRequired: Python."
     header = focused.build_focused_resume(_reply(target_job_title="Senior Python Backend Engineer"), BASE, posting)["header"]
@@ -659,11 +660,11 @@ def _at(source, place):
     return {"source": source, "at": place}
 
 
-def test_a_pointers_source_can_only_be_a_job_a_project_or_the_skills():
-    pointer = focused.FOCUSED_JSON_SCHEMA["properties"]["requirements"]["items"]["properties"]["by"]["items"]
+def test_a_complete_copys_pointers_source_can_only_be_a_job_a_project_or_the_skills():
+    pointer = focused.COMPLETE_JSON_SCHEMA["properties"]["requirements"]["items"]["properties"]["by"]["items"]
     assert pointer["properties"]["source"]["enum"] == ["job", "project", "skills"]
     assert sorted(pointer["required"]) == ["at", "source"]
-    prompt = focused.focused_prompt(BASE, POSTING)
+    prompt = focused.focused_prompt(BASE, POSTING, keeps_everything=True)
     assert "its source, which is only ever job, project or skills" in prompt
     assert "  1. Languages: Python, JavaScript, SQL" in prompt and "  3. Tools: GitHub, Jenkins, TDD, Jira" in prompt
 
@@ -773,3 +774,27 @@ def test_a_place_the_checks_swapped_out_is_not_shown():
     # Role 2's first bullet in the reply ("Maintained a SQL Server reporting database.") is not in the copy.
     assert with_the_lines_of_the_copy(met, _reply(), BASE, copy)[0]["shown_in"] == [
         {"where": "Developer", "text": "Built deployment jobs in Jenkins."}]
+
+
+# ── A focused copy: the model writes and chooses exactly 5, 4 and 3 bullets ─────
+
+def test_the_number_of_bullets_is_asked_for_in_the_prompt_and_the_roles_stay_one_list():
+    roles = focused.FOCUSED_JSON_SCHEMA["properties"]["work_experience"]
+    assert roles["type"] == "array" and "minItems" not in roles["items"]["properties"]["bullets"]
+    assert "Role 1, the most recent, gets exactly 5 bullets, role 2 exactly 4" in focused.focused_prompt(LONG, POSTING)
+
+
+def test_when_the_model_writes_too_many_its_first_ones_stay():
+    roles = [{"role_number": 1, "bullets": [_bullet(f"Built service {n} with Python.", n) for n in range(1, 8)]}]
+    copy = focused.build_focused_resume(_reply(work_experience=roles), LONG, POSTING)
+    assert _bullets(copy, 1) == [f"Built service {n} with Python." for n in range(1, 6)]
+
+
+def test_a_focused_reply_keeps_requirements_as_name_kind_and_has():
+    requirement = focused.FOCUSED_JSON_SCHEMA["properties"]["requirements"]["items"]
+    assert sorted(requirement["required"]) == ["has", "kind", "name"]
+    prompt = focused.focused_prompt(BASE, POSTING)
+    assert "by lists the places in the resume" not in prompt
+    assert "every must-have first, then every duty, then every nice-to-have" in prompt
+    assert "The bullets you write for a role are the ones printed." in prompt
+

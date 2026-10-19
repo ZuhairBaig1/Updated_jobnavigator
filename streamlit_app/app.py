@@ -111,6 +111,62 @@ def _show_the_model_reply(resume_id: str):
     st.code(text, language="json", height=600)
     st.download_button("⬇ Download this JSON", data=text, file_name=f"model-output-{kept.get('step', 'model')}.json",
                        mime="application/json", key=f"model-reply-{resume_id}")
+    if kept.get("step") == "tailor":
+        _show_the_posting_sent(kept.get("posting"))
+
+
+def _show_the_posting_sent(posting: dict | None):
+    """Below the model's output: the job description exactly as the model received it, and what the app took out
+    of it first (fake fence markers and the text they cut off, then the sentences Jev found planted)."""
+    st.subheader("Job description sent to the model")
+    if not posting:
+        st.caption("This copy was made before the app kept the job description it sent. Tailor it again to see it.")
+        return
+    _show_the_fake_markers_taken_out(posting)
+    _show_the_jev_check(posting.get("check"))
+    st.caption("Exactly as the prompt carried it, inside the fence the model is told to read as data.")
+    st.code(posting.get("sent", ""), language="text", height=300)
+
+
+def _show_the_fake_markers_taken_out(posting: dict):
+    markers = posting.get("markers_removed") or []
+    cut_off = posting.get("text_removed") or []
+    if not markers:
+        st.caption("Fake markers: none found.")
+        return
+    st.warning(f"Taken out before the model saw it: {len(markers)} fake marker(s), and {len(cut_off)} passage(s) "
+               f"they cut off. The model never received this text.")
+    lines = ["Fake markers:"] + [f"  {marker}" for marker in markers]
+    if cut_off:
+        lines += ["", "Text they cut off:"] + [f"  {passage}" for passage in cut_off]
+    st.code("\n".join(lines), language="text")
+
+
+def _show_the_jev_check(check: dict | None):
+    """What Jev's check of every sentence found: sentences taken out, and sentences kept but doubtful."""
+    if not check:
+        return
+    if not check.get("ran"):
+        st.info("The AI check (Jev) did not run for this copy, so only fake markers were looked for.")
+        return
+    removed = check.get("removed") or []
+    doubtful = check.get("doubtful") or []
+    if removed:
+        st.warning(f"The AI check ({check.get('model') or 'Jev'}) took out {len(removed)} sentence(s) that gave the AI "
+                   f"orders or made claims about the candidate. The model never received them.")
+        st.code(_sentences_with_reasons(removed), language="text")
+    if doubtful:
+        st.info(f"{len(doubtful)} sentence(s) looked doubtful to the AI check and were kept. Worth a look.")
+        st.code(_sentences_with_reasons(doubtful), language="text")
+    if not removed and not doubtful:
+        st.caption(f"AI check ({check.get('model') or 'Jev'}): no planted sentences found.")
+
+
+def _sentences_with_reasons(verdicts: list) -> str:
+    lines = []
+    for verdict in verdicts:
+        lines.append(f"[{verdict.get('reason')}, {verdict.get('score', 0):.2f}]  {verdict.get('sentence')}")
+    return "\n".join(lines)
 
 
 def _render_document(html: str, height: int = 1150):

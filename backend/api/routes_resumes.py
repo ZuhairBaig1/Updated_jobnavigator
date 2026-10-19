@@ -20,7 +20,8 @@ from backend.models.db import get_db, Resume, TracerLink, TracerClickEvent, Sett
 from backend.api._input import str_field
 from backend.analyzer.model_json import UNPARSEABLE_MESSAGE, ModelReplyError, parse_model_json
 from backend.analyzer.llm_client import LLMTimeoutError, NonRetryableLLMError
-from backend.analyzer.prompt_fence import fence
+from backend.analyzer.posting_check import checked_posting
+from backend.analyzer.prompt_fence import fence, without_fake_markers
 from backend.analyzer.resume_schema import (ATS_LAYOUT, BASE_RESUME_JSON_SCHEMA, BASE_SCHEMA_NAME,
                                             LAYOUT_KEY, RESUME_JSON_SCHEMA, RESUME_SCHEMA_NAME,
                                             TAILOR_JSON_SCHEMA, TAILOR_SCHEMA_NAME,
@@ -1024,6 +1025,20 @@ async def _tailor_impl(base_resume_id: str, job_id: str | None, job_description_
                 logger.error(f"Tailor: job {job_id} has no usable description")
                 raise RuntimeError(f"Tailor: job {job_id} has no usable description")
 
+        # Before the model reads the posting: fake fence markers and the text they cut off come out, then Jev takes
+        # out sentences planted to give the AI orders or to make claims about the candidate. The posting exactly as
+        # the prompt carries it, and what was taken out, are kept with the model's reply for the app to show.
+        posting_cleaning = without_fake_markers(jd_text)
+        if posting_cleaning["markers"]:
+            logger.warning(f"Tailor: took {len(posting_cleaning['markers'])} fake marker(s) out of the posting, "
+                           f"and {len(posting_cleaning['cut_off'])} passage(s) they cut off")
+        posting_check = await checked_posting(posting_cleaning["text"][:JD_MAX_CHARS])
+        jd_text = posting_check["text"]
+        posting_as_sent = {"sent": fence(jd_text[:JD_MAX_CHARS], "JOB POSTING"),
+                           "markers_removed": posting_cleaning["markers"],
+                           "text_removed": posting_cleaning["cut_off"],
+                           "check": {key: posting_check[key] for key in ("ran", "model", "removed", "doubtful")}}
+
         # The base's ATS sections, in the order the tailored copy prints them.
         # Publications are left out: the copy carries only these sections.
         resume_sections = {
@@ -1098,7 +1113,8 @@ async def _tailor_impl(base_resume_id: str, job_id: str | None, job_description_
 
             try:
                 llm_result = parse_model_json(raw)
-                model_reply = _model_reply("tailor", _tracker, _resp, elapsed, llm_result, mode=mode or "full")
+                model_reply = _model_reply("tailor", _tracker, _resp, elapsed, llm_result, mode=mode or "full",
+                                           posting=posting_as_sent)
                 break
             except _json.JSONDecodeError as e:
                 logger.error(f"Tailor JSON parse failed (attempt {attempt}/2): {e}. Raw: {raw[:500]}")

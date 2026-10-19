@@ -96,6 +96,52 @@ def _source_and_place(pointer) -> tuple:
     return FROM_A_JOB, text
 
 
+def requirements_met_in_the_copy(reply: dict) -> list:
+    """The reply's own check of the copy it wrote, one entry a requirement: {"requirement", "met", "found_at"}.
+
+    Its places point into what the reply itself wrote: a role's or project's bullets by their position in the reply,
+    and its skills categories by their position. A place the reply did not write is dropped.
+    """
+    written_bullets = {FROM_A_JOB: _bullets_written(reply.get("work_experience"), "role_number"),
+                       FROM_A_PROJECT: _bullets_written(reply.get("projects"), "project_number")}
+    skill_groups = len(reply.get("technical_skills") or [])
+    met = []
+    for entry in (reply or {}).get("requirements_met") or []:
+        if not isinstance(entry, dict) or not rs._text(entry.get("name")):
+            continue
+        found_at = {FROM_A_JOB: [], FROM_A_PROJECT: [], FROM_THE_SKILLS: []}
+        for pointer in entry.get("by") or []:
+            place = _place_in_what_was_written(pointer, written_bullets, skill_groups)
+            if place:
+                source, where = place
+                found_at[source].append(where)
+        met.append({"requirement": rs._text(entry["name"]), "met": bool(entry.get("met")), "found_at": found_at})
+    return met
+
+
+def _bullets_written(entries, number_key: str) -> dict:
+    """How many bullets the reply wrote for each role or project number; the first mention of a number wins."""
+    counts = {}
+    for entry in entries or []:
+        if isinstance(entry, dict) and isinstance(entry.get(number_key), int) and entry[number_key] not in counts:
+            counts[entry[number_key]] = len(entry.get("bullets") or [])
+    return counts
+
+
+def _place_in_what_was_written(pointer, written_bullets: dict, skill_groups: int):
+    """One pointer into the reply's own writing as (source, where it leads), or None when the reply wrote no such place."""
+    source, place = _source_and_place(pointer)
+    numbers = _PLACE_NUMBERS.match(place)
+    if not numbers or source not in (FROM_A_JOB, FROM_A_PROJECT, FROM_THE_SKILLS):
+        return None
+    number, bullet = int(numbers.group(1)), numbers.group(2)
+    if source == FROM_THE_SKILLS:
+        return (source, number) if bullet is None and 1 <= number <= skill_groups else None
+    if bullet is None or not 1 <= int(bullet) <= written_bullets[source].get(number, 0):
+        return None
+    return (source, (number, int(bullet)))
+
+
 def _one_keyword_each(requirement: str) -> list:
     """A requirement naming several keywords as one ("Python, Pandas, and FastAPI"), taken apart into one each.
 

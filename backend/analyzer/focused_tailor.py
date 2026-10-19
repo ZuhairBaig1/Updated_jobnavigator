@@ -19,7 +19,8 @@ from backend.analyzer.focused_tailor_basics import (BULLETS_OF_AN_EARLIER_ROLE, 
                                                     NICE_TO_HAVE, _bullets_of, _projects, _roles)
 from backend.analyzer.focused_tailor_bullets import (_with_all_the_rest, bullets_a_role_gets, focused_bullets,
                                                      improved_by_swaps, the_most_important)
-from backend.analyzer.focused_tailor_matching import other_names_allowed, requirements_matched
+from backend.analyzer.focused_tailor_matching import (other_names_allowed, requirements_matched,
+                                                      requirements_met_in_the_copy)
 from backend.analyzer.focused_tailor_keywords import (_respell_the_keywords, keywords_counted, keywords_of_the_posting,
                                                       with_the_postings_name_beside_the_resumes)
 from backend.analyzer.focused_tailor_summary_skills import complete_skills, focused_skills, focused_summary
@@ -50,8 +51,11 @@ _PLACE = rs._obj({"source": {"type": "string", "enum": [FROM_A_JOB, FROM_A_PROJE
 
 
 def _schema_of_the_reply(keeps_everything: bool) -> dict:
-    """The reply's format. The matching comes before the writing, so the model has found its evidence before it chooses bullets."""
+    """The reply's format. The matching comes before the writing, so the model has found its evidence before it chooses bullets.
+    A focused reply ends with its own check of what it has written."""
     others = {"other_bullets": _NUMBERS} if keeps_everything else {}
+    checked_last = {} if keeps_everything else {
+        "requirements_met": rs._arr({"name": rs._STR, "met": rs._BOOL, "by": {"type": "array", "items": _PLACE}})}
     return rs._obj({
         rs.TARGET_JOB_TITLE: rs._STR,
         "header": rs._obj({"location": rs._STR, "work_authorization": rs._STR}),
@@ -66,6 +70,7 @@ def _schema_of_the_reply(keeps_everything: bool) -> dict:
         "work_experience": rs._arr({"role_number": _INT, "bullets": {"type": "array", "items": _BULLET}, **others}),
         "projects": rs._arr({"project_number": _INT, "bullets": {"type": "array", "items": _BULLET}, **others}),
         "certifications": rs._STR_LIST,
+        **checked_last,
     })
 
 
@@ -126,7 +131,7 @@ Skills
 - Only skills the resume has. Every skill the posting asks for that the resume has is listed: the must-haves first, then the nice-to-haves, in the posting's exact wording where it is the same thing.
 - When the posting asks for a narrower thing than the resume has ("JavaScript ES6+" where the resume says "JavaScript"), list the resume's own name.
 {skills_also}
-
+{step_5}
 RESUME
 {resume}
 
@@ -157,6 +162,14 @@ _STEP_3_OF_A_COMPLETE_COPY = """STEP 3 - ARRANGE THE RESUME AROUND THE POSTING, 
 _BULLETS_OF_A_COMPLETE_COPY = """
 - A rewritten bullet keeps every tool and every number of the bullets it was written from."""
 
+_STEP_5_OF_A_FOCUSED_COPY = """
+STEP 5 - CHECK WHAT THE NEW RESUME MEETS (after everything above is written)
+- List in requirements_met every requirement of your requirements list again, by the same name.
+- met says whether the resume you have just written shows it.
+- by lists the places in what you have just written that show it, numbered within your own reply: {"source": "job", "at": "1.2"} is the 2nd bullet you wrote for role 1, {"source": "project", "at": "3.1"} is the 1st bullet you wrote for project 3, {"source": "skills", "at": "2"} is the 2nd category of your technical_skills. A place shows a requirement only when it names it or plainly describes doing it.
+- When nothing you wrote shows it, met is false and by is empty.
+"""
+
 _SKILLS_OF_A_FOCUSED_COPY = """- Leave out skills the posting does not ask for, except a few that support a bullet you kept.
 - 12 to 20 skills in at most four short categories. Each skill once. A skill is a tool, technology or method, not a quality ("highly available", "scalable")."""
 
@@ -168,13 +181,16 @@ def focused_prompt(base: dict, jd_text: str, keeps_everything: bool = False) -> 
     """The prompt for a focused copy, or with keeps_everything for a complete one."""
     if keeps_everything:
         step_3, bullets_also, skills_also = _STEP_3_OF_A_COMPLETE_COPY, _BULLETS_OF_A_COMPLETE_COPY, _SKILLS_OF_A_COMPLETE_COPY
+        step_5 = ""
     else:
         step_3, bullets_also, skills_also = _STEP_3_OF_A_FOCUSED_COPY, "", _SKILLS_OF_A_FOCUSED_COPY
+        step_5 = _STEP_5_OF_A_FOCUSED_COPY
     # Filled in this order: step 3 brings its own {latest}, {second} and {earlier}.
     fill_ins = [
         ("{step_3}", step_3),
         ("{bullets_also}", bullets_also),
         ("{skills_also}", skills_also),
+        ("{step_5}", step_5),
         ("{latest}", str(BULLETS_OF_THE_LATEST_ROLES[0])),
         ("{second}", str(BULLETS_OF_THE_LATEST_ROLES[1])),
         ("{earlier}", str(BULLETS_OF_AN_EARLIER_ROLE)),
@@ -304,6 +320,9 @@ def build_focused_resume(reply: dict, base: dict, jd_text: str = "", title_of_th
         "bullets_in_the_original": sum(len(role.get("bullets") or []) for role in roles),
         "keywords": keywords_counted(copy, keywords),
     }
+    if not keeps_everything:
+        # The reply's own check of what it wrote (step 5); its places point into the reply, before the checks above.
+        copy[REPORT_KEY]["requirements_met"] = requirements_met_in_the_copy(reply)
     return copy
 
 

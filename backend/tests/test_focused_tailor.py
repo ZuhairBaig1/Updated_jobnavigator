@@ -699,3 +699,44 @@ def test_a_skill_only_in_the_skills_earns_no_points_for_a_job_bullet_about_somet
         BASE["experience"], PROJECTS, 3)
     rewrite = {"text": "Supported a Redis cache used by the web team.", "from": [3], "as_written": False}
     assert matched[0]["found_at"]["skills"] == [2] and _shown_by(rewrite, 2, matched) == set()
+
+
+# ── What the tailored copy meets, in the reply's own last word ─────────────────
+
+def test_requirements_met_is_the_last_thing_a_focused_reply_writes():
+    schema = focused.FOCUSED_JSON_SCHEMA
+    assert list(schema["properties"])[-1] == "requirements_met"
+    met = schema["properties"]["requirements_met"]["items"]
+    assert sorted(met["required"]) == ["by", "met", "name"]
+    assert met["properties"]["by"]["items"]["properties"]["source"]["enum"] == ["job", "project", "skills"]
+    assert "STEP 5 - CHECK WHAT THE NEW RESUME MEETS" in focused.focused_prompt(BASE, POSTING)
+
+
+def test_a_complete_reply_has_no_requirements_met():
+    assert "requirements_met" not in focused.COMPLETE_JSON_SCHEMA["properties"]
+    prompt = focused.focused_prompt(BASE, POSTING, keeps_everything=True)
+    assert "STEP 5" not in prompt and "requirements_met" not in prompt
+    assert "{step_5}" not in prompt and "{step_5}" not in focused.focused_prompt(BASE, POSTING)
+
+
+def test_requirements_met_points_into_what_the_reply_wrote():
+    from backend.analyzer.focused_tailor_matching import requirements_met_in_the_copy
+    reply = _reply(technical_skills=[{"category": "Core", "skills": "Python, FastAPI"},
+                                     {"category": "Data", "skills": "PostgreSQL"}],
+                   requirements_met=[
+                       {"name": "Python", "met": True,
+                        "by": [_at("job", "1.1"), _at("job", "1.3"), _at("skills", "1"), _at("skills", "3"), _at("job", "2.2")]},
+                       {"name": "Kafka", "met": False, "by": []}])
+    met = requirements_met_in_the_copy(reply)
+    # Role 1 got two bullets in the reply, role 2 two, and there are two skills groups.
+    assert met[0] == {"requirement": "Python", "met": True,
+                      "found_at": {"job": [(1, 1), (2, 2)], "project": [], "skills": [1]}}
+    assert met[1]["met"] is False and met[1]["found_at"] == {"job": [], "project": [], "skills": []}
+
+
+def test_the_report_carries_what_the_copy_meets():
+    reply = _reply(requirements_met=[{"name": "Python", "met": True, "by": [_at("job", "1.1")]}])
+    report = focused.build_focused_resume(reply, BASE, POSTING)[focused.REPORT_KEY]
+    assert report["requirements_met"][0]["requirement"] == "Python" and report["requirements_met"][0]["met"]
+    complete_report = focused.build_focused_resume(_reply(), BASE, POSTING, keeps_everything=True)[focused.REPORT_KEY]
+    assert "requirements_met" not in complete_report

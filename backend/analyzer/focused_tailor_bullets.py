@@ -11,6 +11,7 @@ import difflib
 import logging
 import re
 
+from backend.analyzer import keyword_match
 from backend.analyzer import resume_schema as rs
 from backend.analyzer.focused_tailor_basics import BULLETS_OF_AN_EARLIER_ROLE, BULLETS_OF_THE_LATEST_ROLES, MUST_HAVE
 from backend.analyzer.focused_tailor_checks import (_WORD, _names_the_requirement, _with_the_unsupported_items_taken_out,
@@ -266,7 +267,9 @@ def _content_words(text: str) -> set:
 def swapped_in_for_missing_musts(bullets_of_each_role: list, roles: list, requirements: list) -> int:
     """For each must-have no chosen bullet names, swaps in a résumé bullet that names it, as written; returns how many.
 
-    The safety net under the model's own choice: it acts only on a must-have the résumé's bullets name word for word.
+    The safety net under the model's own choice: it acts only on a must-have that names a tool or technology the skills
+    dictionary knows ("SQL", "Kubernetes"), and that the résumé's bullets name word for word. A degree's field, a duty
+    or a trait is not one: "Engineering" once swapped in a bullet only for saying "engineering efficiency".
     The most recent role with such a bullet takes it, in the slot whose loss costs the copy the fewest points, never in
     place of a role's first bullets. A screener counts a core skill only when a role shows it, so this is not limited to
     one swap a role. Changes bullets_of_each_role in place.
@@ -274,7 +277,8 @@ def swapped_in_for_missing_musts(bullets_of_each_role: list, roles: list, requir
     swapped = 0
     for requirement in requirements:
         keyword = requirement["requirement"]
-        if requirement["importance"] != MUST_HAVE or _named_anywhere(bullets_of_each_role, keyword):
+        if (requirement["importance"] != MUST_HAVE or not _names_a_tool(keyword)
+                or _named_anywhere(bullets_of_each_role, keyword)):
             continue
         for role_number, role in enumerate(roles, start=1):
             chosen = bullets_of_each_role[role_number - 1]
@@ -288,6 +292,12 @@ def swapped_in_for_missing_musts(bullets_of_each_role: list, roles: list, requir
             swapped += 1
             break
     return swapped
+
+
+def _names_a_tool(keyword: str) -> bool:
+    """Whether a requirement's name is a tool or technology the skills dictionary knows (a hard skill)."""
+    entry = keyword_match._lookup(keyword.split())
+    return bool(entry) and keyword_match.KEYWORD_TYPES[entry[2]] == keyword_match.HARD_SKILL
 
 
 def _unused_bullet_naming(keyword: str, role: dict, chosen: list) -> dict | None:

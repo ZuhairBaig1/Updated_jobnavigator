@@ -58,14 +58,21 @@ def _has_a_capital(text: str) -> bool:
 
 
 def in_the_postings_spelling(text: str, keywords: list) -> str:
-    """The text with each keyword it already holds respelled as the posting spells it: "CSS3" as "Css3", "CI/CD" as "CI / CD".
+    """The text with each keyword it already holds respelled as the posting spells it: "CI/CD" as "CI / CD".
 
-    Only the same word in another spelling is touched, so nothing is claimed that was not claimed before.
-    Longer keywords go first, so "Test Driven Development" is settled before "Development" could be.
+    Only the same word in another spelling is touched, so nothing is claimed that was not claimed before. Letter case
+    alone is never changed: an ATS search ignores it, and following the posting's capitals turned ordinary words into
+    "Web Services" and "Engineering" in the middle of a sentence (16 copies of 2026-10-19: 12 of them). Longer keywords
+    go first, so "Test Driven Development" is settled before "Development" could be.
     """
     for keyword in sorted(keywords, key=len, reverse=True):
-        text = _however_it_is_spelled(keyword).sub(lambda match: keyword, text or "")
+        text = _however_it_is_spelled(keyword).sub(lambda match: _respelled(match.group(0), keyword), text or "")
     return text
+
+
+def _respelled(written: str, keyword: str) -> str:
+    """The posting's spelling of what is written, unless the two differ only in their capitals."""
+    return written if written.lower() == keyword.lower() else keyword
 
 
 def _respell_the_keywords(copy: dict, keywords: list) -> None:
@@ -118,5 +125,5 @@ def keywords_counted(copy: dict, keywords: list) -> list:
 
 
 def _exactly(keyword: str):
-    """A pattern for the keyword exactly as written, as a word of its own."""
-    return re.compile(r"(?<![A-Za-z0-9])" + re.escape(keyword) + r"(?![A-Za-z0-9+#])")
+    """A pattern for the keyword as written, in any capitals (an ATS search ignores them), as a word of its own."""
+    return re.compile(r"(?<![A-Za-z0-9])" + re.escape(keyword) + r"(?![A-Za-z0-9+#])", re.IGNORECASE)

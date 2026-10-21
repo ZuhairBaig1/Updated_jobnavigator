@@ -1,5 +1,6 @@
 """Focused tailoring: a short résumé rebuilt for one posting that says less than the base and never more."""
 from backend.analyzer import focused_tailor as focused
+from backend.analyzer import focused_tailor_checks as checks
 
 BASE = {
     "header": {"name": "Sam Lee", "title": "Backend Developer",
@@ -202,8 +203,8 @@ def test_a_skill_the_resume_does_not_have_is_left_out():
 def test_a_narrower_skill_is_printed_under_the_resumes_own_name():
     skills = [{"category": "Core", "skills": "Python, Javascript ES6+"}]
     copy = focused.build_focused_resume(_reply(technical_skills=skills), BASE, POSTING)
-    # the résumé's own skill, in the posting's spelling of that word, without the "ES6+" the résumé never states
-    assert "Javascript" in _skills_printed(copy) and "Javascript ES6+" not in _skills_printed(copy)
+    # the résumé's own skill in its own capitals, without the "ES6+" the résumé never states
+    assert "JavaScript" in _skills_printed(copy) and "Javascript ES6+" not in _skills_printed(copy)
 
 
 def test_a_detail_in_brackets_the_resume_does_not_have_is_taken_off():
@@ -292,6 +293,14 @@ def test_a_must_already_named_by_a_chosen_bullet_swaps_nothing():
 def test_a_must_the_resume_shows_nowhere_swaps_nothing():
     requirements = [{"name": "Kubernetes", "kind": "must", "has": False, "by": []}]
     copy = focused.build_focused_resume(_reply(requirements=requirements, work_experience=_written(1, 2, 3, 4, 5)), LONG, POSTING)
+    assert copy[focused.REPORT_KEY]["bullets_swapped_in"] == 0
+
+
+def test_a_must_that_is_an_ordinary_word_and_not_a_tool_swaps_nothing():
+    # "Engineering" is in almost any bullet; a swap for it traded a chosen bullet for an unrelated one
+    long = _long_with(8, "Led engineering reviews for the team.")
+    requirements = [{"name": "Engineering", "kind": "must", "has": True, "by": []}]
+    copy = focused.build_focused_resume(_reply(requirements=requirements, work_experience=_written(1, 2, 3, 4, 5)), long, POSTING)
     assert copy[focused.REPORT_KEY]["bullets_swapped_in"] == 0
 
 
@@ -388,8 +397,8 @@ def test_a_complete_copy_keeps_every_skill_with_the_replys_groups_first():
     copy = _complete()
     printed = _skills_printed(copy)
     assert list(copy["skills"])[0] == "Core" and printed[:2] == ["Python", "FastAPI"]
-    # "Javascript" and "Github" are the posting's spellings of two skills the résumé lists
-    assert {"Javascript", "SQL", "PostgreSQL", "SQL Server", "Redis", "Github", "Jenkins", "TDD", "Jira"} <= set(printed)
+    # the posting writes "Javascript" and "Github"; capitals alone are never changed, so the résumé's own stay
+    assert {"JavaScript", "SQL", "PostgreSQL", "SQL Server", "Redis", "GitHub", "Jenkins", "TDD", "Jira"} <= set(printed)
 
 
 def test_a_complete_copy_adds_no_skill_the_resume_lacks():
@@ -447,9 +456,14 @@ def test_a_postings_name_already_printed_is_not_added_again():
     assert skills == {"Databases": "PostgreSQL, MSSQL"}
 
 
-def test_a_keyword_the_copy_holds_is_respelled_as_the_posting_spells_it():
+def test_a_keyword_the_copy_holds_is_respelled_as_the_posting_spells_it_but_never_for_its_capitals_alone():
     assert focused.in_the_postings_spelling("Used GITHUB and test-driven development.", ["Github", "Test Driven Development"]) \
-        == "Used Github and Test Driven Development."
+        == "Used GITHUB and Test Driven Development."
+
+
+def test_an_ordinary_word_is_not_capitalised_because_the_posting_capitalises_it():
+    assert focused.in_the_postings_spelling("Led engineering of web services.", ["Engineering", "Web Services"]) \
+        == "Led engineering of web services."
 
 
 def test_a_keyword_joined_another_way_is_respelled():
@@ -460,11 +474,11 @@ def test_respelling_never_touches_a_longer_word_that_contains_the_keyword():
     assert focused.in_the_postings_spelling("Tuned PostgreSQL and MySQL.", ["SQL"]) == "Tuned PostgreSQL and MySQL."
 
 
-def test_the_copy_spells_a_keyword_as_the_posting_does_in_skills_summary_and_bullets():
+def test_the_copy_keeps_its_capitals_where_the_posting_differs_only_in_them():
     posting = POSTING.replace("Python, FastAPI", "PYTHON, FastAPI")
     copy = focused.build_complete_resume(_reply(requirements=[_requirement("PYTHON")]), BASE, posting)
-    assert "PYTHON" in _skills_printed(copy) and "Python" not in copy["summary"]
-    assert not any("Python" in bullet for role in copy["experience"] for bullet in role["bullets"])
+    assert "Python" in _skills_printed(copy) and "Python" in copy["summary"]
+    assert not any("PYTHON" in bullet for role in copy["experience"] for bullet in role["bullets"])
 
 
 def test_the_report_counts_each_keyword_in_the_skills_and_elsewhere():
@@ -518,6 +532,79 @@ def test_a_bullet_that_names_a_must_is_credited_with_it_without_a_pointer():
 def test_a_phrase_is_supported_when_the_bullets_own_sources_state_each_of_its_words():
     assert focused._every_word_is_stated_in("REST APIs", "Built RESTful services and public APIs.")
     assert not focused._every_word_is_stated_in("Spring Security", "Built Spring Boot services.")
+
+
+ROLE = ("Built Spring Boot microservices on Kafka, containerized with Docker, using an event-driven architecture; set up "
+        "CI/CD with Jenkins; built screens in React and ran Agile ceremonies.")
+
+
+def test_a_name_the_role_states_in_other_words_or_with_other_endings_is_supported():
+    for name in ("Microservices Architecture", "Docker-containerized", "Containerization", "React.js", "CI/CD"):
+        assert checks._is_supported(name, ROLE, {}), name
+
+
+def test_a_narrower_thing_than_the_role_names_is_not_supported():
+    # a product of a tool the role names, or a method filed under a broader one ("Scrum" under Agile)
+    for name in ("Spring Security", "Kafka Streams", "GitHub Actions", "Scrum"):
+        assert not checks._is_supported(name, ROLE, {}), name
+
+
+def test_a_name_the_role_does_not_state_is_not_supported():
+    for name in ("Kubernetes", "Python Scripting"):
+        assert not checks._is_supported(name, ROLE, {}), name
+
+
+RESUME = ("Stored events in MongoDB and DynamoDB; ran Spark jobs on AWS (EC2, S3, EMR); built Jenkins CI/CD pipelines; "
+          "wrote Python and Bash; ran distributed services on Linux; worked on Spring Boot and Azure in Agile teams.")
+
+
+def test_a_family_is_supported_by_a_member_the_resume_names():
+    for name in ("NoSQL", "NoSQL databases"):
+        assert checks._is_supported(name, RESUME, {}), name
+    assert checks._is_supported("relational databases", "Tuned MySQL queries.", {})
+    assert not checks._is_supported("NoSQL", "Tuned MySQL queries.", {})
+
+
+def test_a_tool_named_with_its_vendor_is_supported_by_the_tools_own_name():
+    assert checks._is_supported("AWS EMR", RESUME, {})
+
+
+def test_a_stated_name_with_a_generic_word_after_it_is_supported():
+    for name in ("CI/CD tools", "CI/CD processes", "Python Scripting", "distributed systems"):
+        assert checks._is_supported(name, RESUME, {}), name
+
+
+def test_a_generic_word_that_finishes_a_products_name_is_not_supported():
+    for name in ("Spring Cloud", "Spring Data", "Azure Pipelines"):
+        assert not checks._is_supported(name, RESUME, {}), name
+
+
+def test_a_pair_needs_both_its_halves():
+    assert not checks._is_supported("Linux/Unix", RESUME, {})
+    assert {"Scrum", "Unix"} <= focused._names_in("Worked in Agile/Scrum teams on Linux/Unix.", set())
+    assert not checks._is_supported("Scrum", RESUME, {}) and not checks._is_supported("Unix", RESUME, {})
+
+
+def test_only_tools_and_named_techniques_are_checked_not_every_capitalised_word():
+    sentence = ("Built record IDs handling with Event Architecture and Engines across Monitoring of Kubernetes and "
+                "Agile teams, monitoring daily")
+    assert focused._names_in(sentence, set()) == {"Agile", "Kubernetes", "Monitoring"}
+
+
+def test_a_bullet_that_rewords_what_its_role_states_is_kept_as_written():
+    base = {**BASE, "experience": [{**BASE["experience"][0], "bullets": [
+        "Split the monolith into microservices behind one gateway architecture.", "Containerized every service with Docker."]}]}
+    rewritten = "Split the monolith into a Microservices Architecture with Docker Containerization."
+    roles = [{"role_number": 1, "bullets": [_bullet(rewritten, 1, 2)]}]
+    copy = focused.build_focused_resume(_reply(work_experience=roles), base, POSTING)
+    assert rewritten in _bullets(copy, 1)
+
+
+def test_a_skill_the_resume_states_in_another_form_stays_in_the_skills():
+    base = {**BASE, "experience": [{**BASE["experience"][0], "bullets": ["Containerized every service with Docker."]}]}
+    copy = focused.build_focused_resume(_reply(technical_skills=[{"category": "Core", "skills": "Python, Containerization"}]),
+                                        base, POSTING)
+    assert "Containerization" in _skills_printed(copy)
 
 
 def test_a_swap_is_made_only_when_the_copy_then_shows_more():
